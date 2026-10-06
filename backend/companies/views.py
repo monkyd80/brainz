@@ -71,7 +71,7 @@ class CompanyViewSet(SearchableModelViewSet):
 
     @action(detail=False, methods=["get"], url_path="import-template", permission_classes=[IsAdminUser])
     def import_template(self, request):
-        template_path = settings.BASE_DIR.parent / "sample_kdy.xls"
+        template_path = settings.TEMPLATE_FILE
         if not template_path.exists():
             return Response({"detail": "기존 엑셀 양식 파일을 찾을 수 없습니다."}, status=404)
         return FileResponse(

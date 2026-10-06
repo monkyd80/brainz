@@ -26,9 +26,9 @@ load_dotenv(BASE_DIR / ".env")
 SECRET_KEY = os.environ['DJANGO_SECRET_KEY']
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = os.getenv('DJANGO_DEBUG', 'true').lower() == 'true'
 
-ALLOWED_HOSTS = ['localhost', '127.0.0.1', 'testserver']
+ALLOWED_HOSTS = os.getenv('DJANGO_ALLOWED_HOSTS', 'localhost,127.0.0.1,testserver').split(',')
 
 
 # Application definition
@@ -92,6 +92,13 @@ DATABASES = {
 }
 
 CORS_ALLOWED_ORIGINS = ['http://localhost:3000', 'http://127.0.0.1:3000']
+CSRF_TRUSTED_ORIGINS = [origin for origin in os.getenv('DJANGO_CSRF_TRUSTED_ORIGINS', '').split(',') if origin]
+if os.getenv('DJANGO_CORS_ALLOWED_ORIGINS'):
+    CORS_ALLOWED_ORIGINS = os.environ['DJANGO_CORS_ALLOWED_ORIGINS'].split(',')
+if os.getenv('DJANGO_BEHIND_PROXY', 'false').lower() == 'true':
+    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+SESSION_COOKIE_SECURE = os.getenv('DJANGO_COOKIE_SECURE', 'false').lower() == 'true'
+CSRF_COOKIE_SECURE = SESSION_COOKIE_SECURE
 DEFAULT_FROM_EMAIL = 'noreply@kdy.local'
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': ['rest_framework.authentication.TokenAuthentication'],
@@ -134,6 +141,8 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/6.1/howto/static-files/
 
 STATIC_URL = 'static/'
+STATIC_ROOT = BASE_DIR / 'staticfiles'
+TEMPLATE_FILE = Path(os.getenv('TEMPLATE_FILE', str(BASE_DIR.parent / 'sample_kdy.xls')))
 
 
 # Email
@@ -141,7 +150,8 @@ STATIC_URL = 'static/'
 
 MAILERS = {
     'default': {
-        'BACKEND': 'django.core.mail.backends.console.EmailBackend',
+        'BACKEND': ('django.core.mail.backends.console.EmailBackend' if DEBUG
+                    else 'django.core.mail.backends.smtp.EmailBackend'),
     },
 }
 FRONTEND_URL = os.getenv('FRONTEND_URL', 'http://127.0.0.1:3000').rstrip('/')

@@ -1,0 +1,12 @@
+.git
+.venv
+**/node_modules
+**/.next
+**/__pycache__
+**/.env
+**/.env.*
+**/*.dump
+**/*.sql
+**/*.xlsx
+**/*.xls
+deploy/rocky9/backups

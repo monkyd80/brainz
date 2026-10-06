@@ -15,3 +15,5 @@ __pycache__/
 *.xlsx
 계정.txt
 수정사항*.txt
+deploy/rocky9/backups/
+deploy/rocky9/assets/
