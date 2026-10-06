@@ -1,0 +1,17 @@
+.venv/
+node_modules/
+.next/
+__pycache__/
+*.py[cod]
+*.tsbuildinfo
+.env
+.env.*
+!.env.example
+*.sqlite3
+*.db
+*.sql
+*.dump
+*.xls
+*.xlsx
+계정.txt
+수정사항*.txt

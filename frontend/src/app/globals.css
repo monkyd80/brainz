@@ -1,0 +1,73 @@
+@import "tailwindcss";
+* { box-sizing: border-box; }
+body { margin: 0; font-family: Arial, "Malgun Gothic", sans-serif; background: #f6f8fc; }
+button { transition: background-color .16s ease, border-color .16s ease, box-shadow .16s ease, transform .16s ease; }
+button:active { transform: scale(.98); }
+.center-workspace,
+.center-workspace dl,
+.center-workspace table,
+.center-workspace th,
+.center-workspace td,
+.center-workspace input,
+.center-workspace select,
+.center-workspace textarea,
+.center-form,
+.center-form input,
+.center-form select,
+.center-form textarea {
+  text-align: center;
+}
+.center-form div:has(> textarea[name="notes"]),
+.center-form div:has(> textarea[name="special_notes"]),
+.center-form textarea[name="notes"],
+.center-form textarea[name="special_notes"] {
+  text-align: left;
+}
+.center-workspace dt,
+.center-workspace th {
+  font-size: 0.875rem !important;
+  font-weight: 700 !important;
+}
+.center-workspace > div:first-child > div:first-child > p:first-child {
+  font-size: 1.3125rem !important;
+  font-weight: 700 !important;
+}
+.workspace-grid > aside label:has(> input[type="radio"]) {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+.workspace-grid > aside label:has(> input[type="radio"]):last-child {
+  font-size: 0 !important;
+  line-height: 1;
+}
+.workspace-grid > aside label:has(> input[type="radio"]):last-child::after {
+  content: "사용자별\A사이트";
+  white-space: pre;
+  font-size: 0.875rem;
+  line-height: 1.1;
+}
+.fixed.inset-0.z-50 button:not([aria-label="닫기"]):not(:disabled) {
+  background-color: #fff !important;
+  border: 1px solid #cbd5e1 !important;
+  color: #334155 !important;
+}
+.fixed.inset-0.z-50 button:not([aria-label="닫기"]):not(:disabled):hover {
+  background-color: #2563eb !important;
+  border-color: #2563eb !important;
+  color: #fff !important;
+}
+input, textarea, select { transition: border-color .16s ease, box-shadow .16s ease, background-color .16s ease; }
+input:focus, textarea:focus, select:focus { box-shadow: 0 0 0 3px rgba(37, 99, 235, .10); }
+.workspace-grid { display: grid; grid-template-columns: 1fr; }
+@media (min-width: 1024px) {
+  .workspace-grid { grid-template-columns: 280px minmax(0, 1fr) 320px; }
+  .workspace-grid--left-collapsed { grid-template-columns: 56px minmax(0, 1fr) 320px; }
+  .workspace-grid--right-collapsed { grid-template-columns: 280px minmax(0, 1fr) 56px; }
+  .workspace-grid--left-collapsed.workspace-grid--right-collapsed { grid-template-columns: 56px minmax(0, 1fr) 56px; }
+}
+
+@media (max-width: 640px) {
+  .workspace-grid { min-height: auto; }
+}
