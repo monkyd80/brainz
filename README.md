@@ -55,5 +55,4 @@ Django API, PostgreSQL, Next.js로 구성된 사이트 관리 서비스입니다
 
 현재 설정은 로컬 개발용입니다. 비밀번호 재설정 메일은 SMTP 환경 설정 후 사용할 수 있습니다.
 
-Rocky Linux 9 서버 설치, DB 이전 및 운영 스크립트는 [배포 안내](deploy/rocky9/README.md)를 참고하세요.
-Docker 없이 직접 설치하려면 [직접 설치 안내](deploy/native-rocky9/README.md)를 참고하세요.
+기존 PostgreSQL DB를 사용하는 Rocky Linux 9 앱 신규 설치는 [설치 안내](deploy/native-rocky9/README.md)를 참고하세요.
