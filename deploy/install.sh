@@ -2,10 +2,9 @@
 # Rocky Linux 9: install the app using an existing, restored PostgreSQL DB.
 set -euo pipefail
 [[ $EUID == 0 ]] || { echo 'Use sudo.' >&2; exit 1; }
-[[ $(realpath "$(dirname "$0")/..") == /opt/brainz ]] || { echo 'Clone this repository to /opt/brainz first.' >&2; exit 1; }
 source /etc/os-release
 [[ "$ID" == rocky && "$VERSION_ID" == 9.* ]] || { echo 'Rocky Linux 9 required.' >&2; exit 1; }
-ip=${1:?Usage: sudo bash deploy/install-app.sh SERVER_IPV4 [DB_PORT] [WEB_PORT] [BACKEND_PORT] [FRONTEND_PORT]}
+ip=${1:?Usage: sudo bash install.sh SERVER_IPV4 [DB_PORT] [WEB_PORT] [BACKEND_PORT] [FRONTEND_PORT]}
 db_port=${2:-15432}
 web_port=${3:-8080}
 backend_port=${4:-18000}
@@ -46,6 +45,13 @@ done
 if [[ ! -e /etc/nginx/conf.d/brainz.conf && -n $(ss -H -ltn "sport = :$web_port") ]]; then
   echo "Web port $web_port is occupied." >&2; exit 1
 fi
+# Obtain application source automatically on a DB-only server.
+# This script can be run from /tmp or another directory.
+if [[ ! -e /opt/brainz ]]; then
+  dnf install -y git
+  git clone https://github.com/monkyd80/brainz.git /opt/brainz
+fi
+[[ -d /opt/brainz/.git && -f /opt/brainz/backend/manage.py && -f /opt/brainz/frontend/package-lock.json ]] || { echo '/opt/brainz exists but is not the application checkout. Refusing overwrite.' >&2; exit 1; }
 dnf install -y dnf-plugins-core
 dnf config-manager --set-enabled crb
 dnf install -y git curl tar xz bzip2 gcc make bison flex openssl openssl-devel zlib-devel \

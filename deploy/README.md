@@ -1,6 +1,6 @@
 # 기존 DB를 사용하는 Rocky Linux 9 앱 설치
 
-배포 파일은 **`install-app.sh` 하나**입니다. 이전 `native-rocky9` 설치 파일은 삭제했습니다.
+배포 파일은 **`install.sh` 하나**입니다. 이전 `native-rocky9` 설치 파일은 삭제했습니다.
 이미 복원된 PostgreSQL DB에 연결하여 Python 3.12, Node.js 22, Nginx, Django/Gunicorn, Next.js를 설치합니다.
 PostgreSQL 설치, DB·계정 생성, DB 복원 및 DB 서비스 재시작은 하지 않습니다.
 
@@ -8,22 +8,24 @@ PostgreSQL 설치, DB·계정 생성, DB 복원 및 DB 서비스 재시작은 �
 
 Rocky Linux 9, sudo 권한, 인터넷 연결이 필요합니다. 서버 IP를 실제 값으로 바꾸세요.
 
-처음 소스를 받는 경우:
+DB만 있는 서버에서는 설치 파일 하나를 받아 실행합니다. 아래 IP를 실제 서버 IP로 바꾸세요.
+`/opt/brainz`는 미리 만들 필요가 없습니다. 스크립트가 Git을 설치하고 GitHub 소스를 받아 자동 생성합니다.
 
 ```bash
-sudo dnf install -y git
-sudo git clone https://github.com/monkyd80/brainz.git /opt/brainz
-cd /opt/brainz
-sudo bash deploy/install-app.sh 192.168.0.50 15432
+curl -fL https://raw.githubusercontent.com/monkyd80/brainz/main/deploy/install.sh -o /tmp/brainz-install.sh
+sudo bash /tmp/brainz-install.sh 192.168.0.50 15432
 ```
 
-이미 소스를 받았다면 로컬 수정 여부를 확인하고 최신 소스를 받습니다:
+서버에 curl이 없다면 먼저 `sudo dnf install -y curl`을 실행하세요.
+PC의 `Backup/install.sh`를 서버에 복사하여 `sudo bash install.sh 서버IP 15432`로 실행해도 됩니다.
+
+이미 소스를 받았다면 로컬 수정 여부를 확인하고 최신 소스를 받습니다. 스크립트는 기존 소스를 자동으로 갱신하거나 덮어쓰지 않습니다:
 
 ```bash
 sudo git -C /opt/brainz status --short
 sudo git -C /opt/brainz pull --ff-only
 cd /opt/brainz
-sudo bash deploy/install-app.sh 192.168.0.50 15432
+sudo bash deploy/install.sh 192.168.0.50 15432
 ```
 
 질문에서 DB 호스트는 `127.0.0.1`, DB 이름은 `manager`, DB 사용자는 `brainz`가 기본값입니다.
@@ -33,8 +35,8 @@ DB 포트는 명령의 `15432`를 실제 포트로 바꾸세요.
 앱 포트까지 지정하는 형식:
 
 ```bash
-sudo bash deploy/install-app.sh 서버IPv4 DB포트 웹포트 백엔드포트 프런트엔드포트
-# 예: sudo bash deploy/install-app.sh 192.168.0.50 15432 8080 18000 13000
+sudo bash deploy/install.sh 서버IPv4 DB포트 웹포트 백엔드포트 프런트엔드포트
+# 예: sudo bash deploy/install.sh 192.168.0.50 15432 8080 18000 13000
 ```
 
 기본 접속 주소는 **`http://서버IP:8080`**입니다.
@@ -50,7 +52,7 @@ sudo bash deploy/install-app.sh 서버IPv4 DB포트 웹포트 백엔드포트 �
 - 앱 빌드, 정적 파일 수집, systemd 등록, Nginx 설정 및 HTTP 응답 확인을 진행합니다.
 - 실행용 파일은 스크립트가 `/etc/brainz/run-backend.sh`, `run-frontend.sh`에 자동 생성합니다.
 
-실패 후 재개와 앱 업데이트도 **같은 `install-app.sh` 명령**을 사용합니다.
+실패 후 재개와 앱 업데이트도 **같은 `install.sh` 명령**을 사용합니다.
 이미 생성된 환경파일과 설치된 런타임은 재사용합니다.
 저장된 설정과 명령 인자의 IP/포트가 다르면 중단합니다. 변경하려면 환경파일을 먼저 수정하세요.
 환경파일의 비밀번호는 Bash 인용 규칙을 유지해야 하며 파일 내용을 공유하지 마세요.
