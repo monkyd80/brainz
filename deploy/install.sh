@@ -53,7 +53,14 @@ if [[ ! -e /opt/brainz ]]; then
 fi
 [[ -d /opt/brainz/.git && -f /opt/brainz/backend/manage.py && -f /opt/brainz/frontend/package-lock.json ]] || { echo '/opt/brainz exists but is not the application checkout. Refusing overwrite.' >&2; exit 1; }
 dnf install -y dnf-plugins-core
-dnf config-manager --set-enabled crb
+# Some Rocky 9 installations only define BaseOS/AppStream.
+# Do not create or replace repository configuration on a shared DB server.
+repo_list=$(dnf -q repolist --all)
+if awk '$1 == "crb" { found=1 } END { exit !found }' <<< "$repo_list"; then
+  dnf config-manager --set-enabled crb
+else
+  echo 'CRB repository is not configured; installing app dependencies from existing repositories.'
+fi
 dnf install -y git curl tar xz bzip2 gcc make bison flex openssl openssl-devel zlib-devel \
   bzip2-devel libffi-devel readline-devel sqlite-devel xz-devel ncurses-devel \
   libuuid-devel nginx policycoreutils-python-utils firewalld
