@@ -25,6 +25,7 @@ http_ok() {
   [[ "$code" =~ ^2[0-9][0-9]$ ]]
 }
 printf 'BRAINZ 설치 점검 (설정·DB·서비스를 변경하지 않습니다)\n\n'
+check '앱 전용 Linux 사용자 brainz-app' id brainz-app
 check '프로젝트 소스' test -f /opt/brainz/backend/manage.py
 check 'Python 3.12 런타임' /opt/brainz-runtime/python/bin/python3.12 -c 'import sys, ssl, sqlite3; assert sys.version_info[:2] == (3, 12)'
 check 'Node.js 22 런타임' /opt/brainz-runtime/node/bin/node -e 'if (Number(process.versions.node.split(".")[0]) !== 22) process.exit(1)'
@@ -61,9 +62,9 @@ if [[ "$env_ready" == true ]]; then
   # Bound DB connection attempts so an unreachable host does not hang checks.
   export PGCONNECT_TIMEOUT=5
   if cd /opt/brainz; then
-    check '기존 DB 접속 및 앱 테이블' runuser -u brainz -- .venv/bin/python backend/manage.py shell -c 'from django.db import connection; cursor = connection.cursor(); cursor.execute("SELECT to_regclass(%s)", ["public.django_migrations"]); assert cursor.fetchone()[0], "Application DB not restored"'
-    check 'Django 설정 및 모델 검사' runuser -u brainz -- .venv/bin/python backend/manage.py check
-    check '미적용 DB 마이그레이션 없음' runuser -u brainz -- .venv/bin/python backend/manage.py shell -c 'from django.db import connection; from django.db.migrations.executor import MigrationExecutor; executor = MigrationExecutor(connection); assert not executor.migration_plan(executor.loader.graph.leaf_nodes()), "Pending migrations"'
+    check '기존 DB 접속 및 앱 테이블' runuser -u brainz-app -- .venv/bin/python backend/manage.py shell -c 'from django.db import connection; cursor = connection.cursor(); cursor.execute("SELECT to_regclass(%s)", ["public.django_migrations"]); assert cursor.fetchone()[0], "Application DB not restored"'
+    check 'Django 설정 및 모델 검사' runuser -u brainz-app -- .venv/bin/python backend/manage.py check
+    check '미적용 DB 마이그레이션 없음' runuser -u brainz-app -- .venv/bin/python backend/manage.py shell -c 'from django.db import connection; from django.db.migrations.executor import MigrationExecutor; executor = MigrationExecutor(connection); assert not executor.migration_plan(executor.loader.graph.leaf_nodes()), "Pending migrations"'
   else
     check '앱 작업 경로 접근' false
     skip 'DB 및 Django 검사: 프로젝트 경로 없음'

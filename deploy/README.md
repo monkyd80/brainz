@@ -28,6 +28,9 @@ cd /opt/brainz
 sudo bash deploy/install.sh 192.168.0.50 15432
 ```
 
+앱 실행용 Linux 계정은 `brainz-app`이며 기존 Linux 사용자 `brainz`는 변경하지 않습니다.
+DB 접속 계정 `brainz`와 앱 Linux 계정은 서로 별개입니다.
+
 질문에서 DB 호스트는 `127.0.0.1`, DB 이름은 `manager`, DB 사용자는 `brainz`가 기본값입니다.
 Enter로 기본값을 선택한 뒤 기존 DB 비밀번호를 입력합니다. 비밀번호는 화면에 표시되지 않습니다.
 DB 포트는 명령의 `15432`를 실제 포트로 바꾸세요.

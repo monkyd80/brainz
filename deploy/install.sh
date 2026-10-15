@@ -64,10 +64,10 @@ fi
 dnf install -y git curl tar xz bzip2 gcc make bison flex openssl openssl-devel zlib-devel \
   bzip2-devel libffi-devel readline-devel sqlite-devel xz-devel ncurses-devel \
   libuuid-devel nginx policycoreutils-python-utils firewalld
-if id brainz >/dev/null 2>&1; then
-  [[ $(getent passwd brainz | cut -d: -f6) == /var/lib/brainz ]] || { echo 'Linux user brainz belongs to another installation. Refusing reuse.' >&2; exit 1; }
+if id brainz-app >/dev/null 2>&1; then
+  [[ $(getent passwd brainz-app | cut -d: -f6) == /var/lib/brainz-app ]] || { echo 'Linux user brainz-app belongs to another installation. Refusing reuse.' >&2; exit 1; }
 else
-  useradd --system --create-home --home-dir /var/lib/brainz --shell /sbin/nologin brainz
+  useradd --system --create-home --home-dir /var/lib/brainz-app --shell /sbin/nologin brainz-app
 fi
 install -d -m 755 /opt/brainz-runtime
 work=$(mktemp -d /var/tmp/brainz-build.XXXXXX)
@@ -96,7 +96,7 @@ install -d /opt/brainz-runtime/node
 tar -xJf "$node_file" --strip-components=1 -C /opt/brainz-runtime/node
 fi
 if [[ ! -e /etc/brainz/brainz.env ]]; then
-install -d -m 750 -o root -g brainz /etc/brainz
+install -d -m 750 -o root -g brainz-app /etc/brainz
 install -d -m 755 /var/lib/brainz-static
 umask 077
 # Bash escaping preserves special characters. Do not use as systemd EnvironmentFile.
@@ -121,9 +121,12 @@ write_env() { printf '%s=%q\n' "$1" "$2"; }
   write_env TEMPLATE_FILE /opt/brainz/sample_kdy.xls
 } > /etc/brainz/brainz.env
 unset password
-chown root:brainz /etc/brainz/brainz.env
+chown root:brainz-app /etc/brainz/brainz.env
 chmod 640 /etc/brainz/brainz.env
 fi
+install -d -m 750 -o root -g brainz-app /etc/brainz
+chown root:brainz-app /etc/brainz/brainz.env
+chmod 640 /etc/brainz/brainz.env
 install -d -m 755 /var/lib/brainz-static
 cat > /etc/brainz/run-backend.sh <<'BRAINZ_WRAPPER'
 #!/usr/bin/env bash
@@ -143,7 +146,7 @@ export PATH=/opt/brainz-runtime/node/bin:$PATH
 cd /opt/brainz/frontend
 exec /opt/brainz-runtime/node/bin/node node_modules/next/dist/bin/next start --hostname 127.0.0.1 --port "$FRONTEND_PORT"
 BRAINZ_WRAPPER
-chown root:brainz /etc/brainz/run-backend.sh /etc/brainz/run-frontend.sh
+chown root:brainz-app /etc/brainz/run-backend.sh /etc/brainz/run-frontend.sh
 chmod 750 /etc/brainz/run-backend.sh /etc/brainz/run-frontend.sh
 cd /opt/brainz
 set -a
@@ -170,22 +173,22 @@ fi
 if systemctl is-active --quiet brainz-backend; then systemctl stop brainz-backend; fi
 if systemctl is-active --quiet brainz-frontend; then systemctl stop brainz-frontend; fi
 # This is a dedicated application checkout, not a shared workspace.
-chown -R brainz:brainz backend frontend
+chown -R brainz-app:brainz-app backend frontend
 if [[ ! -x .venv/bin/python ]]; then
   /opt/brainz-runtime/python/bin/python3.12 -m venv .venv
-  chown -R brainz:brainz .venv
 fi
-runuser -u brainz -- .venv/bin/pip install -r backend/requirements.txt gunicorn==23.0.0
+chown -R brainz-app:brainz-app .venv
+runuser -u brainz-app -- .venv/bin/pip install -r backend/requirements.txt gunicorn==23.0.0
 # Fail before migrations if credentials, server version or restored DB are wrong.
-runuser -u brainz -- .venv/bin/python backend/manage.py shell -c 'from django.db import connection; connection.ensure_connection(); cursor = connection.cursor(); cursor.execute("SELECT to_regclass(%s)", ["public.django_migrations"]); assert cursor.fetchone()[0], "Restore the application DB before deployment"; print("Existing application DB connection OK")'
-runuser -u brainz -- .venv/bin/python backend/manage.py migrate --noinput
-runuser -u brainz -- .venv/bin/python backend/manage.py collectstatic --noinput
-runuser -u brainz -- .venv/bin/python backend/manage.py check --deploy
+runuser -u brainz-app -- .venv/bin/python backend/manage.py shell -c 'from django.db import connection; connection.ensure_connection(); cursor = connection.cursor(); cursor.execute("SELECT to_regclass(%s)", ["public.django_migrations"]); assert cursor.fetchone()[0], "Restore the application DB before deployment"; print("Existing application DB connection OK")'
+runuser -u brainz-app -- .venv/bin/python backend/manage.py migrate --noinput
+runuser -u brainz-app -- .venv/bin/python backend/manage.py collectstatic --noinput
+runuser -u brainz-app -- .venv/bin/python backend/manage.py check --deploy
 cp -a backend/staticfiles/. /var/lib/brainz-static/
 chmod -R a+rX /var/lib/brainz-static
 cd frontend
-runuser -u brainz -- env PATH="$PATH" /opt/brainz-runtime/node/bin/npm ci
-runuser -u brainz -- env PATH="$PATH" NEXT_PUBLIC_API_URL=/api NEXT_TELEMETRY_DISABLED=1 /opt/brainz-runtime/node/bin/npm run build
+runuser -u brainz-app -- env PATH="$PATH" /opt/brainz-runtime/node/bin/npm ci
+runuser -u brainz-app -- env PATH="$PATH" NEXT_PUBLIC_API_URL=/api NEXT_TELEMETRY_DISABLED=1 /opt/brainz-runtime/node/bin/npm run build
 cd /opt/brainz
 cat > /etc/systemd/system/brainz-backend.service <<'EOF'
 [Unit]
@@ -193,8 +196,8 @@ Description=BRAINZ Django Gunicorn
 After=network-online.target
 Wants=network-online.target
 [Service]
-User=brainz
-Group=brainz
+User=brainz-app
+Group=brainz-app
 WorkingDirectory=/opt/brainz/backend
 ExecStart=/bin/bash /etc/brainz/run-backend.sh
 Restart=on-failure
@@ -208,8 +211,8 @@ cat > /etc/systemd/system/brainz-frontend.service <<'EOF'
 Description=BRAINZ Next.js
 After=network.target
 [Service]
-User=brainz
-Group=brainz
+User=brainz-app
+Group=brainz-app
 WorkingDirectory=/opt/brainz/frontend
 Environment=NODE_ENV=production
 Environment=NEXT_TELEMETRY_DISABLED=1
