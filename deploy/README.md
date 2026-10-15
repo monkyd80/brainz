@@ -1,6 +1,6 @@
 # 기존 DB를 사용하는 Rocky Linux 9 앱 설치
 
-배포 파일은 **`install.sh` 하나**입니다. 이전 `native-rocky9` 설치 파일은 삭제했습니다.
+설치는 **`install.sh`**, 설치 후 점검은 **`check-install.sh`**를 사용합니다. 이전 `native-rocky9` 설치 파일은 삭제했습니다.
 이미 복원된 PostgreSQL DB에 연결하여 Python 3.12, Node.js 22, Nginx, Django/Gunicorn, Next.js를 설치합니다.
 PostgreSQL 설치, DB·계정 생성, DB 복원 및 DB 서비스 재시작은 하지 않습니다.
 
@@ -87,3 +87,21 @@ sudo journalctl -u brainz-backend -u brainz-frontend -n 100 --no-pager
 DB가 다른 호스트에 있다면 앱 서버의 접속을 허용하는 기존 DB 서버 설정이 필요합니다.
 
 Bash 문법 및 주요 분기 검사를 수행했습니다. 실제 Rocky 서버의 패키지 설치·빌드·서비스 기동은 검증하지 않았습니다.
+
+## 설치 완료 점검
+
+서버에서 최신 체크 파일을 받아 실행합니다. 설치 스크립트와 별개로 단독 실행할 수 있습니다.
+
+```bash
+curl -fL https://raw.githubusercontent.com/monkyd80/brainz/main/deploy/check-install.sh -o /tmp/check-install.sh
+sudo bash /tmp/check-install.sh
+```
+
+PC의 `Backup/check-install.sh`를 서버로 복사했다면 `sudo bash check-install.sh`로 실행하세요.
+소스가 최신이면 `sudo bash /opt/brainz/deploy/check-install.sh`로 실행할 수도 있습니다.
+
+런타임·앱 의존성·빌드 결과·systemd·Nginx 설정·기존 DB 연결·미적용 마이그레이션·HTTP 응답을 확인합니다.
+`[OK]`는 통과, `[FAIL]`은 실패, `[SKIP]`은 필요한 설정이 없어 검사하지 못한 항목입니다.
+실패하면 종료코드 1, 모든 검사가 통과하면 0을 반환합니다. 비밀번호는 출력하지 않습니다.
+패키지 설치, DB 변경 및 서비스 재시작은 수행하지 않습니다.
+서버 내부 점검만으로 외부 방화벽이나 실제 데이터의 완전성을 확인할 수 없으므로 다른 PC에서 업무 화면도 확인하세요.
