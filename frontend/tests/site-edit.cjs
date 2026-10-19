@@ -1,0 +1,48 @@
+const { test } = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const vm = require('node:vm');
+const ts = require('typescript');
+const source = fs.readFileSync('src/app/dashboard/page.tsx', 'utf8');
+const update = source.slice(source.indexOf('  async function updateCompany('), source.indexOf('  async function deleteCompany('));
+
+test('editing saves existing solution fields and related records, then refreshes central data', async () => {
+  const editing = { id: 1, solutions: [{ id: 5, category: 'sms', product_name: 'SMS', other_detail: 'old' }, { id: 6, category: 'other' }], contacts: [{ id: 7 }], hardware_specs: [{ id: 8, target: 'database' }], hardware_capacities: [{ id: 9 }], integrations: [{ id: 10, integration_type: 'other' }], contract_products: [], installation_locations: [] };
+  const form = new FormData();
+  for (const [key, value] of Object.entries({ name: 'site', build_year: '2026-10-19', notes: 'updated', license_sms_label: 'renamed', license_sms_used: '0', license_sms_total: '10', license_sms_other: 'new detail', license_sms_additional: 'extra', contact_0_id: '7', contact_0_name: 'updated contact', capacity_0_id: '9', capacity_0_directory: '/data', capacity_0_used: '20', db_disk: '100', hw_other: 'hardware detail', integration_other_enabled: 'on', integration_other: 'integration detail', ems_version: '2', install_java: '/java' })) form.set(key, value);
+  const calls = [];
+  let all, mine, closed = false;
+  const full = { ...editing, refreshed: true };
+  const context = { editing, API: '/api', FormData: function () { return form; }, localStorage: { getItem: () => 'token' }, readSystemRows: () => [], setAllCompanies: fn => { all = fn([editing]); }, setMyCompanies: fn => { mine = fn([editing]); }, setEditing: value => { closed = value === null; }, fetch: async (url, options) => { calls.push({ url, method: options.method ?? 'GET', body: options.body && JSON.parse(options.body) }); return { ok: true, json: async () => full }; } };
+  vm.createContext(context);
+  vm.runInContext(ts.transpile(update + '\nthis.run = updateCompany;', { target: ts.ScriptTarget.ES2020 }), context);
+  await context.run({ preventDefault() {}, currentTarget: {} });
+  const saved = calls.find(call => call.url === '/api/solutions/5/');
+  assert.equal(saved.method, 'PATCH');
+  assert.equal(saved.body.other_detail, 'new detail');
+  assert.equal(saved.body.additional_info, 'extra');
+  assert.equal(saved.body.used_quantity, 0);
+  assert.equal(saved.body.product_name, 'renamed');
+  assert.ok(calls.some(call => call.url === '/api/solutions/6/' && call.method === 'DELETE'));
+  for (const path of ['contacts/7', 'hardware-capacities/9', 'hardware-specs/8', 'integrations/10']) assert.ok(calls.some(call => call.url === `/api/${path}/` && call.method === 'PATCH'), path);
+  assert.ok(calls.some(call => call.url === '/api/contract-products/' && call.method === 'POST'));
+  assert.ok(calls.some(call => call.url === '/api/installation-locations/' && call.body.path === '/java'));
+  assert.equal(calls[0].body.notes, 'updated');
+  assert.equal(calls[0].body.build_date, '2026-10-19');
+  assert.equal(all[0], full);
+  assert.equal(mine[0], full);
+  assert.ok(closed);
+});
+
+test('initial values retain all contacts, capacity rows, and other integration detail', () => {
+  const code = source.slice(source.indexOf('function editInitialValues('), source.indexOf('type SearchScope'));
+  const context = {};
+  vm.createContext(context);
+  vm.runInContext(ts.transpile(code + '\nthis.read = editInitialValues;', { target: ts.ScriptTarget.ES2020 }), context);
+  const values = context.read({ name: 'site', support_staff: '', contacts: [{ id: 4, name: 'one' }, { id: 5, name: 'two' }], hardware_capacities: [{ id: 9, directory: '/data', used_capacity: '0' }], integrations: [{ integration_type: 'other', enabled: true, detail: 'keep me' }] });
+  assert.equal(values.contact_1_name, 'two');
+  assert.equal(values.contact_1_id, '5');
+  assert.equal(values.capacity_0_id, '9');
+  assert.equal(values.capacity_0_used, '0');
+  assert.equal(values.integration_other, 'keep me');
+});
