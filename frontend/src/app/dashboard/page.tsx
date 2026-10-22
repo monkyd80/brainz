@@ -694,9 +694,11 @@ function HistoryPanel({ company }: { company?: Company }) {
 }
 const siteColumns = [
   ["name", "고객사명"], ["maintenance_code", "유지보수 코드"], ["ems_package", "EMS 패키지"], ["current_file_date", "등록·수정일자"],
+  ["dashboard_enabled", "대시보드"],
   ["business_code", "사업 코드"], ["contract_type", "계약구분"], ["sales_manager", "담당 영업"], ["support_staff", "지원 인력"], ["address", "위치"], ["build_date", "구축 날짜"], ["build_year", "구축년도"], ["status", "상태"], ["notes", "참고 사항"], ["special_notes", "특이사항 및 전달사항"], ["remote_support", "원격 지원"], ["supplied_server_os_db", "Server/OS/DB 납품 여부"], ["created_at", "등록일"], ["updated_at", "수정일"], ["ems_version", "EMS 버전"], ["contacts", "고객 담당자"], ["systems", "시스템명"], ["os", "OS"], ["database", "DB"], ["solutions", "구축솔루션"]
 ];
 function siteColumnValue(company: Company, key: string): string {
+  if (key === "dashboard_enabled") return (company.contract_products ?? []).some(product => String(product.product_name ?? "").trim().toLowerCase() === "dashboard") ? "유" : "무";
   if (key === "solutions") return solutionSummary(company.solutions);
   if (key === "updated_at") return company.updated_at?.slice(0, 10) ?? "";
   if (key === "ems_package" || key === "ems_version") return (company.contract_products ?? []).filter(p => String(p.product_name ?? "").trim().toUpperCase() === "EMS").map(p => String(p[key === "ems_package" ? "package_name" : "version"] ?? "")).filter(Boolean).join(" / ");
