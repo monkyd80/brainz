@@ -192,6 +192,10 @@ class CompanyViewSet(SearchableModelViewSet):
                     total_quantity=solution.get("total_quantity"),
                     other_detail=solution.get("other_detail", ""),
                     additional_info=solution.get("additional_info", ""),
+                    **{field: solution[field] for field in (
+                        "linux_windows_quantity", "unix_quantity", "snmp_quantity",
+                        "icmp_quantity", "sdn_quantity", "oracle_quantity",
+                    ) if field in solution},
                 )
         else:
             for code in ("sms", "nms", "dbms", "apm", "syslog", "trap", "oz"):

@@ -3,6 +3,7 @@ from io import BytesIO
 
 import xlrd
 from openpyxl import load_workbook
+from openpyxl.utils import get_column_letter
 from .excel_dates import parse_excel_date
 
 
@@ -51,6 +52,12 @@ SOLUTION_CATEGORY_BY_NAME = {
     "sms": "sms", "nms": "nms", "dbms": "dbms", "apm": "apm",
     "syslog": "syslog", "trap": "trap", "oz": "oz",
 }
+SOLUTION_PLATFORM_FIELDS = {
+    "sms": (("linux_windows_quantity", "Linux/Windows"), ("unix_quantity", "UNIX")),
+    "nms": (("snmp_quantity", "SNMP"), ("icmp_quantity", "ICMP"), ("sdn_quantity", "SDN")),
+    "dbms": (("oracle_quantity", "Oracle"),),
+}
+SOLUTION_COUNT_PATTERN = r"(?:[0-9]{1,3}(?:,[0-9]{3})+|[0-9]+)"
 
 
 def normalize(value):
@@ -111,7 +118,7 @@ def parse_solution_quantity(value):
     text = str(value).strip()
     if isinstance(value, float) and value.is_integer() and value >= 0:
         return {"used_quantity": int(value)}
-    number = r"(?:[0-9]{1,3}(?:,[0-9]{3})+|[0-9]+)"
+    number = SOLUTION_COUNT_PATTERN
     match = re.fullmatch(
         rf"(?P<used>{number})(?:[ \t]*/[ \t]*(?P<total>{number}))?(?:\s+(?P<detail>.*))?",
         text, re.DOTALL,
@@ -123,6 +130,33 @@ def parse_solution_quantity(value):
         result["total_quantity"] = int(match["total"].replace(",", ""))
     if match["detail"] and match["detail"].strip():
         result["other_detail"] = match["detail"].strip()
+    return result
+
+
+def parse_solution_platform_quantities(value, category, cell="15행"):
+    """15행의 항목명 뒤 정수를 읽으며 개·대·EA 등의 단위는 저장하지 않는다."""
+    fields = SOLUTION_PLATFORM_FIELDS.get(category, ())
+    if not fields or empty_excel_value(value) in (None, ""):
+        return {}
+    labels = {normalize(label): (field, label) for field, label in fields}
+    alternatives = "|".join(re.escape(label).replace("/", r"\s*/\s*") for _, label in fields)
+    text = str(value).strip()
+    matches = list(re.finditer(rf"(?<!\w)(?P<label>{alternatives})\s*[:：]", text, re.IGNORECASE))
+    result = {}
+    for index, match in enumerate(matches):
+        end = matches[index + 1].start() if index + 1 < len(matches) else len(text)
+        quantity = text[match.end():end].strip()
+        if index + 1 < len(matches):
+            quantity = quantity.rstrip(" \t\r\n,;/")
+        if quantity in ("", "-"):
+            continue
+        field, label = labels[normalize(match["label"])]
+        # 단위는 문자로 시작해야 한다. 음수·소수·사용/전체 값의 일부를
+        # 세부 수량으로 잘못 잘라 저장하지 않도록 전체 문자열을 검증한다.
+        number = re.fullmatch(rf"(?P<count>{SOLUTION_COUNT_PATTERN})\s*(?:[^\W\d_][^\d]*)?", quantity)
+        if not number:
+            raise ValueError(f"{cell} {label}: 0 이상의 정수와 선택적인 단위(개, 대 등)를 입력하세요.")
+        result[field] = int(number["count"].replace(",", ""))
     return result
 
 
@@ -202,31 +236,44 @@ def fixed_legacy_preview(sheet_name, grid):
             mapped.append({"field": "system", "label": f"시스템 정보 {index + 1}", "value": " / ".join(str(value) for value in system.values())})
 
     # 솔루션 열 순서는 파일마다 달라질 수 있다. 13행의 실제 제목과 바로 아래
-    # 14행의 값을 한 쌍으로 읽는다. 목록에 없는 제목도 product_name으로 보존한다.
+    # 14행의 사용/전체 수량과 15행의 세부 수량을 읽는다.
+    # 목록에 없는 제목도 product_name으로 보존한다.
     solution_rows = []
     if len(grid) > 13:
         for column, header in enumerate(grid[12]):
             normalized_header = normalize(header)
             value = cell_value(grid, 13, column)
-            # 값이 있는 열만 솔루션으로 간주한다. 표 제목 셀은 아래 값이 비어 있으므로 제외된다.
-            if not normalized_header or value in (None, ""):
+            detail = cell_value(grid, 14, column)
+            # 병합된 표 제목과 옆 칸으로 복제된 동일 솔루션은 제외한다.
+            if not normalized_header or (column < 2 and normalize(value) == normalized_header):
+                continue
+            if (column and normalized_header == normalize(grid[12][column - 1])
+                    and value == cell_value(grid, 13, column - 1)
+                    and detail == cell_value(grid, 14, column - 1)):
                 continue
             code = next((known for known in SOLUTION_CATEGORY_BY_NAME if known in normalized_header), None)
+            quantities = parse_solution_platform_quantities(detail, code, f"{get_column_letter(column + 1)}15")
+            if value in (None, "") and not quantities:
+                continue
             product_name = str(header).strip()
             solution = {"product_name": product_name, "category": SOLUTION_CATEGORY_BY_NAME.get(code, "other")}
             solution.update(parse_solution_quantity(value))
+            solution.update(quantities)
             solution_rows.append(solution)
-            mapped.append({"field": "solution", "label": f"구축 솔루션 · {product_name}", "value": str(value)})
+            if value not in (None, ""):
+                mapped.append({"field": "solution", "label": f"구축 솔루션 · {product_name}", "value": str(value)})
 
     # 제목을 인식할 수 없는 구형 양식만 기존 고정 좌표를 사용한다.
     if not solution_rows:
         for code, coordinate in LEGACY_LICENSE_CELLS.items():
             value = cell_value(grid, *coordinate)
-            if value in (None, ""):
+            quantities = parse_solution_platform_quantities(cell_value(grid, 14, coordinate[1]), code, f"{get_column_letter(coordinate[1] + 1)}15")
+            if value in (None, "") and not quantities:
                 continue
             product_name = code.upper() if code != "oz" else "OZ 보고서"
             solution = {"product_name": product_name, "category": code}
             solution.update(parse_solution_quantity(value))
+            solution.update(quantities)
             solution_rows.append(solution)
 
     data["solutions"] = solution_rows
@@ -235,9 +282,10 @@ def fixed_legacy_preview(sheet_name, grid):
         code = solution["category"]
         if code == "other":
             continue
-        value = "/".join(str(solution[key]) for key in ("used_quantity", "total_quantity") if solution.get(key) is not None) or solution.get("other_detail", "")
-        if value in (None, ""):
-            continue
+        for field, label in SOLUTION_PLATFORM_FIELDS.get(code, ()):
+            if solution.get(field) is not None:
+                data[f"license_{code}_{field}"] = solution[field]
+                mapped.append({"field": f"license_{code}_{field}", "label": f"구축 솔루션 · {solution['product_name']} · {label}", "value": str(solution[field])})
         if solution.get("used_quantity") is not None:
             data[f"license_{code}_used"] = solution["used_quantity"]
         if solution.get("total_quantity") is not None:

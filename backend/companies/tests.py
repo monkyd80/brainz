@@ -5,6 +5,7 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
 from openpyxl import load_workbook
 from rest_framework.test import APIClient
+import xlrd
 
 from .models import Company
 from .template_import import template_bytes
@@ -31,7 +32,9 @@ class SiteTemplateImportTests(TestCase):
         self.assertEqual(download.status_code, 200)
         downloaded = b"".join(download.streaming_content) if download.streaming else download.content
         download.close()
-        self.assertEqual(load_workbook(BytesIO(downloaded)).active.title, "사이트 등록")
+        self.assertEqual(download["Content-Type"], "application/vnd.ms-excel")
+        sheet = xlrd.open_workbook(file_contents=downloaded).sheet_by_index(0)
+        self.assertEqual([sheet.cell_value(12, col) for col in (2, 4, 6)], ["SMS", "NMS", "DBMS"])
         values = {"name": "테스트 사이트", "build_date": "2024-03-12", "ems_package": "EMS Plus", "contact_name": "홍길동", "license_sms_used": 0, "license_sms_total": 10, "integration_email": "예", "integration_email_detail": "알림", "system_name": "운영 서버", "install_db": "/data/db", "manager1_cpu": "8 core"}
         preview = self.client.post("/api/companies/import-preview/", {"file": self.upload(values)}, format="multipart")
         self.assertEqual(preview.status_code, 200)
