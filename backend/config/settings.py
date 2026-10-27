@@ -167,3 +167,6 @@ if PASSWORD_RECOVERY_EMAIL_ENABLED:
             'use_tls': os.getenv('SMTP_USE_TLS', 'true').lower() == 'true', 'timeout': 15,
         },
     }
+
+# Site uploads are served through authenticated API endpoints.
+MEDIA_ROOT = Path(os.getenv("SITE_FILES_ROOT", str(BASE_DIR / "uploads")))

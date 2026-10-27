@@ -1,10 +1,11 @@
+import json
 import re
 
 from rest_framework import filters, viewsets
 from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.permissions import IsAdminUser
 from rest_framework.decorators import action
-from rest_framework.exceptions import PermissionDenied
+from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.response import Response
 from django.conf import settings
 from django.db import transaction
@@ -23,9 +24,24 @@ class SearchableModelViewSet(viewsets.ModelViewSet):
 
 
 class CompanyViewSet(SearchableModelViewSet):
-    queryset = Company.objects.prefetch_related("contacts", "contract_products", "solutions", "integrations", "systems", "installation_locations", "hardware_specs", "hardware_capacities", "change_history")
+    queryset = Company.objects.prefetch_related("contacts", "contract_products", "solutions", "integrations", "systems", "installation_locations", "hardware_specs", "hardware_capacities", "change_history", "attachments", "dashboard_image")
     serializer_class = CompanySerializer
     search_fields = ["name", "business_code", "maintenance_code", "contract_type", "sales_manager", "support_staff", "address", "contacts__name", "solutions__product_name", "systems__ip_address"]
+
+    def get_serializer(self, *args, **kwargs):
+        data = kwargs.get("data")
+        if data is not None and self.request.content_type.startswith("multipart/form-data"):
+            try:
+                payload = json.loads(data["data"]) if "data" in data else data.dict()
+            except (ValueError, TypeError):
+                raise ValidationError({"detail": "사이트 정보 형식이 올바르지 않습니다."})
+            if not isinstance(payload, dict):
+                raise ValidationError({"detail": "사이트 정보 형식이 올바르지 않습니다."})
+            payload["uploaded_files"] = self.request.FILES.getlist("files")
+            if "dashboard_image" in self.request.FILES:
+                payload["dashboard_image_upload"] = self.request.FILES["dashboard_image"]
+            kwargs["data"] = payload
+        return super().get_serializer(*args, **kwargs)
 
     @transaction.atomic
     def perform_create(self, serializer):
@@ -71,7 +87,7 @@ class CompanyViewSet(SearchableModelViewSet):
 
     @action(detail=False, methods=["get"], url_path="import-template", permission_classes=[IsAdminUser])
     def import_template(self, request):
-        template_path = settings.TEMPLATE_FILE
+        template_path = settings.BASE_DIR.parent / "sample_kdy.xls"
         if not template_path.exists():
             return Response({"detail": "기존 엑셀 양식 파일을 찾을 수 없습니다."}, status=404)
         return FileResponse(

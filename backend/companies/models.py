@@ -1,6 +1,8 @@
 from django.db import models
 from django.core.serializers.json import DjangoJSONEncoder
 from django.conf import settings
+from .file_uploads import company_attachment_path
+from .dashboard_images import dashboard_image_path
 
 
 class Company(models.Model):
@@ -37,6 +39,35 @@ class Company(models.Model):
 
     def __str__(self):
         return self.name
+
+
+class CompanyAttachment(models.Model):
+    company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name="attachments")
+    file = models.FileField("파일", upload_to=company_attachment_path)
+    original_name = models.CharField("파일명", max_length=255)
+    size = models.PositiveIntegerField("용량 (bytes)")
+    uploaded_at = models.DateTimeField("업로드 날짜", auto_now_add=True)
+    uploaded_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, verbose_name="업로드 사용자")
+
+    class Meta:
+        db_table = "com_attachment"
+        ordering = ["-uploaded_at", "-id"]
+
+
+class CompanyDashboardImage(models.Model):
+    company = models.OneToOneField(Company, on_delete=models.CASCADE, related_name="dashboard_image")
+    file = models.FileField("대시보드 이미지", upload_to=dashboard_image_path)
+    thumbnail = models.FileField("작은 이미지", upload_to=dashboard_image_path)
+    original_name = models.CharField("이미지 파일명", max_length=255)
+    size = models.PositiveIntegerField("용량 (bytes)")
+    width = models.PositiveIntegerField("이미지 너비")
+    height = models.PositiveIntegerField("이미지 높이")
+    content_type = models.CharField("이미지 형식", max_length=50)
+    uploaded_at = models.DateTimeField("등록 날짜", auto_now=True)
+    uploaded_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, verbose_name="등록 사용자")
+
+    class Meta:
+        db_table = "com_dashboard_image"
 
 
 class ContractProduct(models.Model):
@@ -93,6 +124,12 @@ class Solution(models.Model):
     used_quantity = models.PositiveIntegerField("사용 개수", null=True, blank=True, db_index=True)
     total_quantity = models.PositiveIntegerField("전체 개수", null=True, blank=True, db_index=True)
     other_detail = models.CharField("기타", max_length=300, blank=True, db_index=True)
+    linux_windows_quantity = models.PositiveIntegerField("Linux/Windows", null=True, blank=True)
+    unix_quantity = models.PositiveIntegerField("UNIX", null=True, blank=True)
+    snmp_quantity = models.PositiveIntegerField("SNMP", null=True, blank=True)
+    icmp_quantity = models.PositiveIntegerField("ICMP", null=True, blank=True)
+    sdn_quantity = models.PositiveIntegerField("SDN", null=True, blank=True)
+    oracle_quantity = models.PositiveIntegerField("Oracle", null=True, blank=True)
     additional_info = models.TextField("추가 정보", blank=True)
 
     class Meta:

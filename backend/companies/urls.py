@@ -1,8 +1,12 @@
 from rest_framework.routers import DefaultRouter
+from .attachment_views import CompanyAttachmentViewSet
+from .dashboard_images import DashboardImageViewSet
 from .views import CompanyChangeHistoryViewSet, CompanyViewSet, ContactViewSet, ContractProductViewSet, HardwareCapacityViewSet, HardwareSpecViewSet, InstallationLocationViewSet, IntegrationViewSet, LookupOptionViewSet, SolutionViewSet, SystemViewSet
 
 router = DefaultRouter()
 router.register("companies", CompanyViewSet)
+router.register("site-files", CompanyAttachmentViewSet)
+router.register("dashboard-images", DashboardImageViewSet, basename="dashboard-image")
 router.register("contacts", ContactViewSet)
 router.register("contract-products", ContractProductViewSet)
 router.register("solutions", SolutionViewSet)

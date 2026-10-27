@@ -3,6 +3,12 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 const ts = require('typescript');
+const quantityModule = { exports: {} };
+vm.runInNewContext(ts.transpile(fs.readFileSync('src/lib/solutions.ts', 'utf8'), { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 }), { exports: quantityModule.exports });
+const { solutionQuantityValues, solutionQuantityFields } = quantityModule.exports;
+const fileModule = { exports: {} };
+vm.runInNewContext(ts.transpile(fs.readFileSync('src/lib/site-files.ts', 'utf8'), { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 }), { exports: fileModule.exports, FormData });
+const { siteWriteRequest } = fileModule.exports;
 const source = fs.readFileSync('src/app/dashboard/page.tsx', 'utf8');
 const update = source.slice(source.indexOf('  async function updateCompany('), source.indexOf('  async function deleteCompany('));
 
@@ -13,7 +19,7 @@ test('editing saves existing solution fields and related records, then refreshes
   const calls = [];
   let all, mine, closed = false;
   const full = { ...editing, refreshed: true };
-  const context = { editing, API: '/api', FormData: function () { return form; }, localStorage: { getItem: () => 'token' }, readSystemRows: () => [], setAllCompanies: fn => { all = fn([editing]); }, setMyCompanies: fn => { mine = fn([editing]); }, setEditing: value => { closed = value === null; }, fetch: async (url, options) => { calls.push({ url, method: options.method ?? 'GET', body: options.body && JSON.parse(options.body) }); return { ok: true, json: async () => full }; } };
+  const context = { siteWriteRequest, solutionQuantityValues, solutionQuantityFields, editing, API: '/api', FormData: function () { return form; }, localStorage: { getItem: () => 'token' }, readSystemRows: () => [], setAllCompanies: fn => { all = fn([editing]); }, setMyCompanies: fn => { mine = fn([editing]); }, setEditing: value => { closed = value === null; }, fetch: async (url, options) => { calls.push({ url, method: options.method ?? 'GET', body: options.body && JSON.parse(options.body) }); return { ok: true, json: async () => full }; } };
   vm.createContext(context);
   vm.runInContext(ts.transpile(update + '\nthis.run = updateCompany;', { target: ts.ScriptTarget.ES2020 }), context);
   await context.run({ preventDefault() {}, currentTarget: {} });
@@ -36,7 +42,7 @@ test('editing saves existing solution fields and related records, then refreshes
 
 test('initial values retain all contacts, capacity rows, and other integration detail', () => {
   const code = source.slice(source.indexOf('function editInitialValues('), source.indexOf('type SearchScope'));
-  const context = {};
+  const context = { solutionQuantityFields };
   vm.createContext(context);
   vm.runInContext(ts.transpile(code + '\nthis.read = editInitialValues;', { target: ts.ScriptTarget.ES2020 }), context);
   const values = context.read({ name: 'site', support_staff: '', contacts: [{ id: 4, name: 'one' }, { id: 5, name: 'two' }], hardware_capacities: [{ id: 9, directory: '/data', used_capacity: '0' }], integrations: [{ integration_type: 'other', enabled: true, detail: 'keep me' }] });

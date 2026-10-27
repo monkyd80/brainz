@@ -15,3 +15,6 @@ __pycache__/
 *.xlsx
 계정.txt
 수정사항*.txt
+
+# Versioned schema update scripts (database dumps remain ignored).
+!/deploy/sql/*.sql

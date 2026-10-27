@@ -1,6 +1,7 @@
-from django.db.models.signals import post_save, pre_delete, pre_save
+from django.db import transaction
+from django.db.models.signals import post_delete, post_save, pre_delete, pre_save
 from django.dispatch import receiver
-from .models import Company, CompanyChangeHistory, Contact, ContractProduct, HardwareSpec, InstallationLocation, Integration, Solution, System
+from .models import CompanyDashboardImage, CompanyAttachment, Company, CompanyChangeHistory, Contact, ContractProduct, HardwareSpec, InstallationLocation, Integration, Solution, System
 
 
 AUDITED_MODELS = (Company, Contact, ContractProduct, Solution, Integration, System, InstallationLocation, HardwareSpec)
@@ -54,3 +55,17 @@ def record_delete(sender, instance, **kwargs):
         record_id=instance.pk, action=CompanyChangeHistory.Action.DELETE,
         before_data=snapshot(instance), after_data={}, changed_fields=[],
     )
+
+
+@receiver(post_delete, sender=CompanyAttachment)
+def delete_attachment_file(sender, instance, **kwargs):
+    if instance.file:
+        storage, name = instance.file.storage, instance.file.name
+        transaction.on_commit(lambda: storage.delete(name))
+
+
+@receiver(post_delete, sender=CompanyDashboardImage)
+def delete_dashboard_images(sender, instance, **kwargs):
+    for field in (instance.file, instance.thumbnail):
+        if field:
+            transaction.on_commit(lambda storage=field.storage, name=field.name: storage.delete(name))
