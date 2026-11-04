@@ -57,6 +57,7 @@ SOLUTION_PLATFORM_FIELDS = {
     "nms": (("snmp_quantity", "SNMP"), ("icmp_quantity", "ICMP"), ("sdn_quantity", "SDN")),
     "dbms": (("oracle_quantity", "Oracle"),),
 }
+SOLUTION_PLATFORM_ALIASES = {"sms": (("linux_windows_quantity", "Linux/Win"),)}
 SOLUTION_COUNT_PATTERN = r"(?:[0-9]{1,3}(?:,[0-9]{3})+|[0-9]+)"
 
 
@@ -134,30 +135,69 @@ def parse_solution_quantity(value):
 
 
 def parse_solution_platform_quantities(value, category, cell="15행"):
-    """15행의 항목명 뒤 정수를 읽으며 개·대·EA 등의 단위는 저장하지 않는다."""
+    """15행의 수량, 기타와 추가 정보를 각 입력 항목으로 분리한다."""
     fields = SOLUTION_PLATFORM_FIELDS.get(category, ())
     if not fields or empty_excel_value(value) in (None, ""):
         return {}
-    labels = {normalize(label): (field, label) for field, label in fields}
-    alternatives = "|".join(re.escape(label).replace("/", r"\s*/\s*") for _, label in fields)
+    entries = (*fields, *SOLUTION_PLATFORM_ALIASES.get(category, ()),
+               ("other_detail", "기타"), ("additional_info", "추가 정보"))
+    canonical_labels = dict(fields)
+    labels = {normalize(label): (field, canonical_labels.get(field, label)) for field, label in entries}
+    alternatives = "|".join(re.escape(label).replace("/", r"[ \t]*/[ \t]*").replace(r"\ ", r"[ \t]*") for _, label in entries)
     text = str(value).strip()
-    matches = list(re.finditer(rf"(?<!\w)(?P<label>{alternatives})\s*[:：]", text, re.IGNORECASE))
+    # Separate every labeled entry so numbers in notes cannot become counts.
+    matches = list(re.finditer(
+        rf"(?<!\w)(?P<known>{alternatives})[ \t]*[:：]|^[ \t]*(?P<other>[^:：\r\n]+?)[ \t]*[:：]",
+        text, re.IGNORECASE | re.MULTILINE,
+    ))
+    if not matches:
+        return {}
     result = {}
+    notes = {"other_detail": [], "additional_info": []}
+
+    def keep_note(field, note):
+        if note.strip() not in ("", "-"):
+            notes[field].append(note.strip())
+
+    keep_note("additional_info", text[:matches[0].start()])
     for index, match in enumerate(matches):
         end = matches[index + 1].start() if index + 1 < len(matches) else len(text)
+        entry_text = text[match.start():end].strip()
         quantity = text[match.end():end].strip()
         if index + 1 < len(matches):
+            entry_text = entry_text.rstrip(" \t\r\n,;/")
             quantity = quantity.rstrip(" \t\r\n,;/")
+        source_label = match["known"] or match["other"]
+        field, label = labels.get(normalize(source_label), (None, source_label.strip()))
+        if field is None:
+            if quantity not in ("", "-"):
+                keep_note("additional_info", entry_text)
+            continue
+        if field in notes:
+            keep_note(field, quantity)
+            continue
+        lines = quantity.splitlines()
+        while lines and not lines[0].strip():
+            lines.pop(0)
+        quantity = lines[0].strip() if lines else ""
+        keep_note("additional_info", "\n".join(lines[1:]))
         if quantity in ("", "-"):
             continue
-        field, label = labels[normalize(match["label"])]
         # 단위는 문자로 시작해야 한다. 음수·소수·사용/전체 값의 일부를
         # 세부 수량으로 잘못 잘라 저장하지 않도록 전체 문자열을 검증한다.
         number = re.fullmatch(rf"(?P<count>{SOLUTION_COUNT_PATTERN})\s*(?:[^\W\d_][^\d]*)?", quantity)
         if not number:
             raise ValueError(f"{cell} {label}: 0 이상의 정수와 선택적인 단위(개, 대 등)를 입력하세요.")
         result[field] = int(number["count"].replace(",", ""))
+    result.update({field: "\n".join(parts) for field, parts in notes.items() if parts})
     return result
+
+
+def merge_solution_platform_details(solution, details):
+    for field, value in details.items():
+        if field in ("other_detail", "additional_info") and solution.get(field):
+            value = f"{solution[field]}\n{value}"
+        solution[field] = value
 
 
 def system_rows_from_grid(grid):
@@ -252,13 +292,13 @@ def fixed_legacy_preview(sheet_name, grid):
                     and detail == cell_value(grid, 14, column - 1)):
                 continue
             code = next((known for known in SOLUTION_CATEGORY_BY_NAME if known in normalized_header), None)
-            quantities = parse_solution_platform_quantities(detail, code, f"{get_column_letter(column + 1)}15")
+            quantities = parse_solution_platform_quantities(detail, code, f"{get_column_letter(column + 1)}15") if detail != value else {}
             if value in (None, "") and not quantities:
                 continue
             product_name = str(header).strip()
             solution = {"product_name": product_name, "category": SOLUTION_CATEGORY_BY_NAME.get(code, "other")}
             solution.update(parse_solution_quantity(value))
-            solution.update(quantities)
+            merge_solution_platform_details(solution, quantities)
             solution_rows.append(solution)
             if value not in (None, ""):
                 mapped.append({"field": "solution", "label": f"구축 솔루션 · {product_name}", "value": str(value)})
@@ -267,13 +307,14 @@ def fixed_legacy_preview(sheet_name, grid):
     if not solution_rows:
         for code, coordinate in LEGACY_LICENSE_CELLS.items():
             value = cell_value(grid, *coordinate)
-            quantities = parse_solution_platform_quantities(cell_value(grid, 14, coordinate[1]), code, f"{get_column_letter(coordinate[1] + 1)}15")
+            detail = cell_value(grid, 14, coordinate[1])
+            quantities = parse_solution_platform_quantities(detail, code, f"{get_column_letter(coordinate[1] + 1)}15") if detail != value else {}
             if value in (None, "") and not quantities:
                 continue
             product_name = code.upper() if code != "oz" else "OZ 보고서"
             solution = {"product_name": product_name, "category": code}
             solution.update(parse_solution_quantity(value))
-            solution.update(quantities)
+            merge_solution_platform_details(solution, quantities)
             solution_rows.append(solution)
 
     data["solutions"] = solution_rows
@@ -290,8 +331,10 @@ def fixed_legacy_preview(sheet_name, grid):
             data[f"license_{code}_used"] = solution["used_quantity"]
         if solution.get("total_quantity") is not None:
             data[f"license_{code}_total"] = solution["total_quantity"]
-        if solution.get("other_detail"):
-            data[f"license_{code}_other"] = solution["other_detail"]
+        for part, field, label in (("other", "other_detail", "기타"), ("additional", "additional_info", "추가 정보")):
+            if solution.get(field):
+                data[f"license_{code}_{part}"] = solution[field]
+                mapped.append({"field": f"license_{code}_{part}", "label": f"구축 솔루션 · {solution['product_name']} · {label}", "value": solution[field]})
 
     return {"sheet_name": sheet_name, "layout": "legacy_fixed", "data": data, "mapped": mapped, "missing": missing, "unmapped_source_labels": []}
 

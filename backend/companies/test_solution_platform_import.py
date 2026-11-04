@@ -27,6 +27,33 @@ class PlatformQuantityParsingTests(SimpleTestCase):
             with self.subTest(value=value):
                 self.assertEqual(parse_solution_platform_quantities(value, category), expected)
 
+    def test_screenshot_alias_and_miscellaneous_values(self):
+        cases = [
+            ("sms", "Linux/Win : 163\nUnix : 42\n기타 :", {"linux_windows_quantity": 163, "unix_quantity": 42}),
+            ("nms", "SNMP : 203\nICMP :\nSDN :", {"snmp_quantity": 203}),
+            ("dbms", "Oracle : 7\n기타 : 2", {"oracle_quantity": 7, "other_detail": "2"}),
+            ("dbms", "Oracle : 7개\n기타 : 2대", {"oracle_quantity": 7, "other_detail": "2대"}),
+            ("sms", "linux / win：0대\nUNIX: 1,234 EA\n기타: 5개", {"linux_windows_quantity": 0, "unix_quantity": 1234, "other_detail": "5개"}),
+        ]
+        for category, value, expected in cases:
+            with self.subTest(value=value):
+                self.assertEqual(parse_solution_platform_quantities(value, category), expected)
+
+    def test_notes_and_additional_labels_are_preserved_separately(self):
+        self.assertEqual(parse_solution_platform_quantities(
+            "Oracle : 7\nPostgreSQL : 2\n추가 정보 : 운영 서버 3대", "dbms",
+        ), {"oracle_quantity": 7, "additional_info": "PostgreSQL : 2\n운영 서버 3대"})
+        self.assertEqual(parse_solution_platform_quantities(
+            "Oracle: 7\n운영 서버 3대\n기타: 2", "dbms",
+        ), {"oracle_quantity": 7, "other_detail": "2", "additional_info": "운영 서버 3대"})
+        self.assertEqual(parse_solution_platform_quantities("Oracle:\n7대\n기타:\n2개", "dbms"), {
+            "oracle_quantity": 7, "other_detail": "2개",
+        })
+        self.assertEqual(parse_solution_platform_quantities("Oracle: 7개; 기타: 0; 추가 정보: 서버 2대", "dbms"), {
+            "oracle_quantity": 7, "other_detail": "0", "additional_info": "서버 2대",
+        })
+        self.assertEqual(parse_solution_platform_quantities("Oracle:\n기타: -\n추가 정보:", "dbms"), {})
+
     def test_empty_labels_dash_and_unrelated_categories_are_blank(self):
         for value in (None, "", "-", "Linux/Windows :\nUNIX :", "Linux/Windows : -\nUNIX : -"):
             with self.subTest(value=value):
@@ -51,6 +78,18 @@ class PlatformQuantityParsingTests(SimpleTestCase):
         self.assertEqual(values["license_nms_snmp_quantity"], 3)
         self.assertEqual(values["license_dbms_oracle_quantity"], 4)
 
+    def test_vertically_merged_main_license_notes_are_not_imported_twice(self):
+        for with_header in (True, False):
+            with self.subTest(with_header=with_header):
+                grid = [[None] * 15 for _ in range(32)]
+                if with_header:
+                    grid[12][2] = "SMS"
+                grid[13][2] = grid[14][2] = "205/213\n기타 : 기존 정보 2건"
+                values = fixed_legacy_preview("현행화", grid)["data"]
+                self.assertEqual(len(values["solutions"]), 1)
+                self.assertEqual(values["solutions"][0]["other_detail"], "기타 : 기존 정보 2건")
+                self.assertNotIn("additional_info", values["solutions"][0])
+
     def test_existing_xls_template_with_blank_labels_is_compatible(self):
         path = Path(settings.BASE_DIR).parent / "sample_kdy.xls"
         preview = preview_upload(SimpleUploadedFile(path.name, path.read_bytes()))
@@ -63,7 +102,7 @@ class PlatformQuantityUploadTests(TestCase):
         self.client = APIClient()
         self.client.force_authenticate(get_user_model().objects.create_user(username="platform_import_admin", is_staff=True))
 
-    def upload(self, *, detail_only=False, blank=False, invalid=False, reordered=False):
+    def upload(self, *, detail_only=False, blank=False, invalid=False, reordered=False, overrides=None):
         book = Workbook()
         sheet = book.active
         sheet.title = "현행화"
@@ -90,9 +129,56 @@ class PlatformQuantityUploadTests(TestCase):
             if invalid and title == "SMS":
                 detail = "Linux/Windows : -1대\nUNIX :"
             sheet.cell(15, col, detail)
+        for coordinate, value in (overrides or {}).items():
+            sheet[coordinate] = value
         output = BytesIO()
         book.save(output)
         return SimpleUploadedFile("platform_license.xlsx", output.getvalue())
+
+    def test_screenshot_values_preview_and_store_in_the_correct_fields(self):
+        values = {
+            "C14": "205/213", "C15": "Linux/Win : 163\nUnix : 42\n기타 :",
+            "E14": "203/276", "E15": "SNMP : 203\nICMP :\nSDN :",
+            "G14": "9/10", "G15": "Oracle : 7\n기타 : 2",
+        }
+        preview = self.client.post("/api/companies/import-preview/", {"file": self.upload(overrides=values)}, format="multipart")
+        self.assertEqual(preview.status_code, 200, preview.data)
+        self.assertEqual(preview.data["data"]["license_dbms_other"], "2")
+        mapped = {item["field"]: item["value"] for item in preview.data["mapped"]}
+        self.assertEqual(mapped["license_sms_linux_windows_quantity"], "163")
+        self.assertEqual(mapped["license_dbms_other"], "2")
+        response = self.client.post("/api/companies/import-commit/", {"file": self.upload(overrides=values)}, format="multipart")
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertEqual(len(response.data["solutions"]), 3)
+        saved = {row.category: row for row in Company.objects.get().solutions.all()}
+        self.assertEqual((saved["sms"].used_quantity, saved["sms"].total_quantity), (205, 213))
+        self.assertEqual((saved["sms"].linux_windows_quantity, saved["sms"].unix_quantity), (163, 42))
+        self.assertEqual(saved["sms"].other_detail, "")
+        self.assertEqual((saved["nms"].used_quantity, saved["nms"].total_quantity, saved["nms"].snmp_quantity), (203, 276, 203))
+        self.assertIsNone(saved["nms"].icmp_quantity)
+        self.assertIsNone(saved["nms"].sdn_quantity)
+        self.assertEqual((saved["dbms"].used_quantity, saved["dbms"].total_quantity), (9, 10))
+        self.assertEqual((saved["dbms"].oracle_quantity, saved["dbms"].other_detail), (7, "2"))
+
+    def test_detail_notes_preserve_main_count_notes(self):
+        response = self.client.post("/api/companies/import-commit/", {"file": self.upload(overrides={
+            "C15": "Linux/Win: 49대\nUNIX: 0\n기타: 추가 메모 2건\n추가 정보: 별도 정보 3건",
+        })}, format="multipart")
+        self.assertEqual(response.status_code, 201, response.data)
+        solution = Company.objects.get().solutions.get(category="sms")
+        self.assertEqual(solution.other_detail, "기존 SMS 설명\n추가 메모 2건")
+        self.assertEqual(solution.additional_info, "별도 정보 3건")
+        self.assertEqual(solution.linux_windows_quantity, 49)
+
+    def test_miscellaneous_only_is_stored_when_main_counts_are_empty(self):
+        response = self.client.post("/api/companies/import-commit/", {"file": self.upload(detail_only=True, blank=True, overrides={
+            "G15": "Oracle:\n기타: 0",
+        })}, format="multipart")
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertEqual(len(response.data["solutions"]), 1)
+        solution = Company.objects.get().solutions.get(category="dbms")
+        self.assertIsNone(solution.oracle_quantity)
+        self.assertEqual(solution.other_detail, "0")
 
     def test_actual_xls_template_maps_numeric_and_unit_values(self):
         content = (Path(settings.BASE_DIR).parent / "sample_kdy.xls").read_bytes()
