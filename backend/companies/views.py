@@ -3,7 +3,7 @@ import re
 
 from rest_framework import filters, viewsets
 from rest_framework.parsers import FormParser, MultiPartParser
-from rest_framework.permissions import IsAdminUser
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.response import Response
@@ -85,7 +85,7 @@ class CompanyViewSet(SearchableModelViewSet):
         company.systems.exclude(pk__in=[row.pk for row in saved]).delete()
         return Response(SystemSerializer(saved, many=True).data)
 
-    @action(detail=False, methods=["get"], url_path="import-template", permission_classes=[IsAdminUser])
+    @action(detail=False, methods=["get"], url_path="import-template", permission_classes=[IsAuthenticated])
     def import_template(self, request):
         template_path = settings.BASE_DIR.parent / "sample_kdy.xls"
         if not template_path.exists():
