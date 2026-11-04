@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { readSystemRows } from "@/components/systems-editor";
 import { AddSiteDialog } from "@/components/site-add-dialog";
 import { SiteFilesPanel } from "@/components/site-files";
-import { DashboardImageGallery, DashboardImageModal, DashboardImagePreview } from "@/components/dashboard-images";
+import { DashboardImageGallery, DashboardImageModal } from "@/components/dashboard-images";
 import { DashboardImage, DashboardImageTarget } from "@/lib/dashboard-images";
 import { SiteAttachment, siteWriteRequest } from "@/lib/site-files";
 import { SegmentedDatePicker } from "@/components/segmented-date-picker";
@@ -585,8 +585,7 @@ function DashboardInfo({ company, onDashboardOpen }: { company: Company; onDashb
   const image = company.dashboard_image;
   return <section className="rounded-xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
     <h3 className="sticky top-0 z-10 border-b border-slate-100 bg-white py-3 font-bold">대시보드 정보</h3>
-    <dl className="mt-4 grid gap-x-6 gap-y-4 sm:grid-cols-2">{fields.map(([label, value]) => <div key={label} className="border-b border-slate-100 pb-3"><dt className="text-xs text-slate-500">{label}</dt><dd className="mt-1 whitespace-pre-wrap break-words text-sm font-medium">{String(value ?? "") || "미입력"}</dd></div>)}</dl>
-    <div className="mt-4"><p className="mb-2 text-xs text-slate-500">대시보드 이미지</p>{image && image.id > 0 && image.size > 0 ? <><DashboardImagePreview image={image} name={company.name} onPreview={onDashboardOpen} /><p className="mt-2 text-xs text-slate-500">사진을 누르면 확대됩니다.</p></> : <p className="text-sm text-slate-500">등록된 대시보드 이미지가 없습니다.</p>}</div>
+    <dl className="mt-4 grid gap-x-6 gap-y-4 sm:grid-cols-2">{fields.map(([label, value]) => <div key={label} className="border-b border-slate-100 pb-3"><dt className="text-xs text-slate-500">{label}</dt><dd className="mt-1 whitespace-pre-wrap break-words text-sm font-medium">{label === "대시보드 유무" && dashboard && image && image.id > 0 && image.size > 0 ? <button type="button" onClick={() => onDashboardOpen({ name: company.name, image })} aria-label={`${company.name} 대시보드 이미지 보기`} title="대시보드 이미지 보기" className="rounded px-2 py-1 font-semibold text-blue-700 underline decoration-blue-300 underline-offset-4 hover:bg-blue-100 hover:text-blue-900">유</button> : String(value ?? "") || "미입력"}</dd></div>)}</dl>
   </section>;
 }
 function RecordSection({ title, rows }: { title: string; rows?: Record<string, unknown>[] }) {
