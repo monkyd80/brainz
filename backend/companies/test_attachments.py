@@ -20,10 +20,10 @@ class SiteAttachmentTests(TestCase):
         override.enable()
         self.addCleanup(override.disable)
         self.media = Path(directory.name)
-        self.admin = get_user_model().objects.create_user(username="file_admin", is_staff=True)
+        self.admin = get_user_model().objects.create_user(username="file_admin", first_name="파일관리", is_staff=True)
         self.client = APIClient()
         self.client.force_authenticate(self.admin)
-        self.site = Company.objects.create(name="첨부파일 사이트")
+        self.site = Company.objects.create(name="첨부파일 사이트", support_staff="파일관리 부장 / 파일담당 차장")
 
     def upload(self, name="설치 가이드.txt", contents=b"attachment contents"):
         return SimpleUploadedFile(name, contents, content_type="application/octet-stream")
@@ -100,7 +100,7 @@ class SiteAttachmentTests(TestCase):
         self.assertEqual(self.site.attachments.count(), 2)
 
     def test_only_site_managers_can_add_files(self):
-        owner = get_user_model().objects.create_user(username="file_owner")
+        owner = get_user_model().objects.create_user(username="file_owner", first_name="파일담당")
         outsider = get_user_model().objects.create_user(username="file_outsider")
         CompanyAssignment.objects.create(company=self.site, user=owner)
         self.client.force_authenticate(outsider)
@@ -171,7 +171,7 @@ class SiteAttachmentTests(TestCase):
         self.assertEqual(self.client.delete(url).status_code, 403)
         self.assertTrue(CompanyAttachment.objects.filter(pk=row.pk).exists())
         self.assertTrue(stored.exists())
-        owner = get_user_model().objects.create_user(username="delete_file_owner")
+        owner = get_user_model().objects.create_user(username="delete_file_owner", first_name="파일담당")
         CompanyAssignment.objects.create(company=self.site, user=owner)
         self.client.force_authenticate(owner)
         with self.captureOnCommitCallbacks(execute=True):

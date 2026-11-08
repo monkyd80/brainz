@@ -13,6 +13,7 @@ function evaluate(code, context = {}) {
 }
 const library = evaluate(fs.readFileSync('src/lib/solutions.ts', 'utf8'), { exports: {} }).exports;
 Object.assign(library, evaluate(fs.readFileSync('src/lib/site-files.ts', 'utf8'), { exports: {}, FormData }).exports);
+Object.assign(library, evaluate(fs.readFileSync('src/lib/site-deliveries.ts', 'utf8'), { exports: {} }).exports);
 const source = fs.readFileSync('src/app/dashboard/page.tsx', 'utf8');
 const formSource = fs.readFileSync('src/components/site-add-dialog.tsx', 'utf8');
 const fields = { sms: { linux_windows_quantity: 0, unix_quantity: 12 }, nms: { snmp_quantity: 99, icmp_quantity: 23, sdn_quantity: 0 }, dbms: { oracle_quantity: 5 } };
@@ -31,11 +32,13 @@ test('new sites and edits save detail counts even when main counts are blank', a
     const code = source.slice(source.indexOf(`  async function ${name}(`), source.indexOf(`  async function ${end}(`));
     evaluate(code + `\nthis.run = ${name};`, context);
     await context.run({ preventDefault() {}, currentTarget: {} });
-    const saved = calls.filter(call => call.url === '/api/solutions/');
+    const saved = name === 'createCompany'
+      ? calls.find(call => call.url === '/api/companies/').body.registration_records.solutions
+      : calls.filter(call => call.url === '/api/solutions/').map(call => call.body);
     assert.equal(saved.length, 3, name);
-    for (const call of saved) {
-      for (const [field, value] of Object.entries(fields[call.body.category])) assert.equal(call.body[field], value, `${name}: ${field}`);
-      assert.equal(call.body.used_quantity, null);
+    for (const row of saved) {
+      for (const [field, value] of Object.entries(fields[row.category])) assert.equal(row[field], value, `${name}: ${field}`);
+      assert.equal(row.used_quantity, null);
     }
   }
 });
@@ -86,4 +89,22 @@ test('center details and site summaries show category counts, including zero', (
       if (other !== category) for (const [, label] of definitions) assert.ok(!html.includes(`>${label}</dt>`));
     }
   }
+});
+
+test('unchecked delivery types are absent from site details and product search', () => {
+  const info = source.slice(source.indexOf('function InfoGrid('), source.indexOf('\n', source.indexOf('function InfoGrid(')));
+  const search = source.slice(source.indexOf('  const rowsFor = '), source.indexOf('  const textResults = '));
+  const terms = source.slice(source.indexOf('const searchTerms = '), source.indexOf('type SearchRow'));
+  const { Info, productRows, tokenize } = evaluate(
+    info + '\n' + terms + search + '\nthis.Info = InfoGrid; this.productRows = company => rowsFor(company, "product"); this.tokenize = searchTerms;',
+    { React, ...library, HISTORY_FIELD_LABELS: {} },
+  );
+  const company = { name: '납품 테스트', supplied_server: true, supplied_os: false, supplied_db: true };
+  const html = renderToStaticMarkup(React.createElement(Info, { company }));
+  assert.match(html, /Server 납품/);
+  assert.match(html, /DB 납품/);
+  assert.doesNotMatch(html, /OS 납품/);
+  assert.equal(Array.from(productRows(company), row => row.content).join(', '), 'Server 납품, DB 납품');
+  assert.equal(productRows({ ...company, supplied_server: false, supplied_db: false }).length, 0);
+  assert.equal(Array.from(tokenize('DB 납품')).join(', '), 'db 납품');
 });

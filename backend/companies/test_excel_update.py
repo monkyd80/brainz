@@ -10,9 +10,9 @@ from .models import Company, CompanyAssignment, Solution, System
 
 class ExcelUpdateTests(TestCase):
     def setUp(self):
-        self.admin = get_user_model().objects.create_user(username="update_admin", is_staff=True)
-        self.owner = get_user_model().objects.create_user(username="update_owner")
-        self.company = Company.objects.create(name="동일 사이트", current_file_date=date(2026, 6, 12), created_by=self.owner, notes="기존 메모")
+        self.admin = get_user_model().objects.create_user(username="update_admin", first_name="관리담당", is_staff=True)
+        self.owner = get_user_model().objects.create_user(username="update_owner", first_name="현행담당")
+        self.company = Company.objects.create(name="동일 사이트", support_staff="현행담당 / 관리담당", current_file_date=date(2026, 6, 12), created_by=self.owner, notes="기존 메모")
         CompanyAssignment.objects.create(company=self.company, user=self.owner)
         System.objects.create(company=self.company, name="기존 시스템")
         Solution.objects.create(company=self.company, category="trap", product_name="기존 TRAP", used_quantity=1)

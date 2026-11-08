@@ -3,6 +3,7 @@ from rest_framework import serializers
 from .file_uploads import SiteUploadFileField, save_site_attachments
 from .dashboard_images import DashboardUploadField, save_dashboard_image
 from .models import CompanyDashboardImage, CompanyAttachment, Company, CompanyChangeHistory, Contact, ContractProduct, HardwareCapacity, HardwareSpec, InstallationLocation, Integration, LookupOption, Solution, System
+from .site_assignments import can_edit_site
 
 
 class RelatedSerializer(serializers.ModelSerializer):
@@ -48,7 +49,21 @@ class DashboardImageSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
 
+REGISTRATION_RECORDS = {
+    "contacts": ContactSerializer,
+    "contract-products": ContractProductSerializer,
+    "solutions": SolutionSerializer,
+    "integrations": IntegrationSerializer,
+    "systems": SystemSerializer,
+    "installation-locations": InstallationLocationSerializer,
+    "hardware-specs": HardwareSpecSerializer,
+    "hardware-capacities": HardwareCapacitySerializer,
+}
+
+
 class CompanySerializer(serializers.ModelSerializer):
+    can_edit = serializers.SerializerMethodField()
+    registration_records = serializers.DictField(child=serializers.ListField(child=serializers.DictField()), write_only=True, required=False)
     dashboard_image = DashboardImageSerializer(read_only=True)
     remove_dashboard_image = serializers.BooleanField(write_only=True, required=False, default=False)
     dashboard_image_upload = DashboardUploadField(max_length=255, write_only=True, required=False)
@@ -67,9 +82,20 @@ class CompanySerializer(serializers.ModelSerializer):
     class Meta:
         model = Company
         fields = "__all__"
+        read_only_fields = ("created_by",)
 
+
+    def get_can_edit(self, company):
+        request = self.context.get("request")
+        if request is None:
+            return False
+        return can_edit_site(request.user, company, assigned=getattr(company, "assigned_to_request_user", None))
 
     def validate(self, attrs):
+        if "registration_records" in attrs and (
+            self.instance or attrs["registration_records"].keys() - REGISTRATION_RECORDS.keys()
+        ):
+            raise serializers.ValidationError({"registration_records": "신규 사이트의 등록 항목만 입력할 수 있습니다."})
         if attrs.get("remove_dashboard_image") and attrs.get("dashboard_image_upload"):
             raise serializers.ValidationError({"dashboard_image_upload": "이미지 등록과 삭제를 동시에 요청할 수 없습니다."})
         return attrs
@@ -92,10 +118,15 @@ class CompanySerializer(serializers.ModelSerializer):
 
     @transaction.atomic
     def create(self, validated_data):
+        records = validated_data.pop("registration_records", {})
         files = validated_data.pop("uploaded_files", [])
         dashboard_image = validated_data.pop("dashboard_image_upload", None)
         remove_dashboard_image = validated_data.pop("remove_dashboard_image", False)
         company = super().create(validated_data)
+        for kind, rows in records.items():
+            related = REGISTRATION_RECORDS[kind](data=[{**row, "company": company.pk} for row in rows], many=True)
+            related.is_valid(raise_exception=True)
+            related.save()
         self._save_files(company, files, dashboard_image, remove_dashboard_image)
         return company
 

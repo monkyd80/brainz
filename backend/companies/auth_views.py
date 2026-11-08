@@ -1,5 +1,6 @@
 from django.contrib.auth import authenticate, get_user_model
 from django.db import transaction
+from django.db.models import Q
 from rest_framework import status
 from rest_framework.authtoken.models import Token
 from rest_framework.decorators import api_view, permission_classes
@@ -83,14 +84,14 @@ def change_own_password(request):
 def own_profile(request):
     if request.method == "GET":
         return Response({"username": request.user.username, "name": request.user.get_full_name() or request.user.first_name, "email": request.user.email})
-    name = str(request.data.get("name", request.user.first_name)).strip()
+    if "name" in request.data and request.data["name"] != request.user.get_full_name():
+        return Response({"detail": "이름 변경은 관리자에게 요청하세요."}, status=status.HTTP_400_BAD_REQUEST)
     email = str(request.data.get("email", request.user.email)).strip()
     if email and User.objects.exclude(pk=request.user.pk).filter(email=email).exists():
         return Response({"detail": "이미 사용 중인 이메일입니다."}, status=status.HTTP_400_BAD_REQUEST)
-    request.user.first_name = name
     request.user.email = email
-    request.user.save(update_fields=["first_name", "email"])
-    return Response({"username": request.user.username, "name": name, "email": email, "detail": "내 정보가 저장되었습니다."})
+    request.user.save(update_fields=["email"])
+    return Response({"username": request.user.username, "name": request.user.get_full_name(), "email": email, "detail": "내 정보가 저장되었습니다."})
 
 
 @api_view(["GET"])
@@ -152,7 +153,7 @@ def admin_user_detail(request, user_id):
     # Serialize administrator changes so concurrent requests cannot remove the last admin.
     list(User.objects.select_for_update().filter(is_staff=True).order_by("pk"))
     try:
-        user = User.objects.get(pk=user_id)
+        user = User.objects.select_for_update().get(pk=user_id)
     except User.DoesNotExist:
         return Response({"detail": "사용자를 찾을 수 없습니다."}, status=status.HTTP_404_NOT_FOUND)
     if "is_admin" in request.data and not isinstance(request.data["is_admin"], bool):
@@ -168,13 +169,19 @@ def admin_user_detail(request, user_id):
         if user.username in ("brainz", "brainz_admin"):
             return Response({"detail": "brainz / brainz_admin 계정은 삭제할 수 없습니다."}, status=400)
         archive_user = brainz_account()
-        site_ids = set(CompanyAssignment.objects.filter(user=user).values_list("company_id", flat=True))
-        site_ids.update(Company.objects.filter(created_by=user).values_list("id", flat=True))
-        for company_id in sorted(site_ids):
-            if not CompanyAssignment.objects.filter(company_id=company_id, user__is_active=True, user__is_staff=False).exclude(user_id__in=[user.pk, archive_user.pk]).exists():
-                CompanyAssignment.objects.get_or_create(company_id=company_id, user=archive_user)
-            else:
-                CompanyAssignment.objects.filter(company_id=company_id, user=archive_user).delete()
+        assigned_sites = user.company_assignments.values("company_id")
+        affected_sites = Company.objects.filter(Q(pk__in=assigned_sites) | Q(created_by=user))
+        locked_ids = list(affected_sites.select_for_update().order_by("pk").values_list("pk", flat=True))
+        archive_ids = (
+            Company.objects.filter(pk__in=locked_ids)
+            .filter(Q(pk__in=assigned_sites) | Q(created_by=user, assignments__isnull=True))
+            .values_list("pk", flat=True)
+            .distinct()
+        )
+        CompanyAssignment.objects.bulk_create(
+            [CompanyAssignment(company_id=site_id, user=archive_user) for site_id in archive_ids],
+            ignore_conflicts=True,
+        )
         Company.objects.filter(created_by=user).update(created_by=archive_user)
         user.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
@@ -213,7 +220,8 @@ def admin_user_detail(request, user_id):
 def admin_assignments(request):
     user_id = request.query_params.get("user_id") or request.data.get("user_id")
     try:
-        user = User.objects.get(pk=user_id)
+        users = User.objects.select_for_update(no_key=True) if request.method == "PUT" else User.objects
+        user = users.get(pk=user_id)
     except (User.DoesNotExist, TypeError, ValueError):
         return Response({"detail": "사용자를 선택하세요."}, status=status.HTTP_400_BAD_REQUEST)
     if request.method == "GET":

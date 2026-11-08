@@ -9,13 +9,15 @@ from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.response import Response
 from django.conf import settings
 from django.db import transaction
+from django.db.models import Exists, OuterRef
 from django.http import FileResponse, HttpResponse
+from django.shortcuts import get_object_or_404
 from .models import Company, CompanyChangeHistory, Contact, ContractProduct, HardwareCapacity, HardwareSpec, InstallationLocation, Integration, LookupOption, Solution, System
 from .serializers import CompanyChangeHistorySerializer, CompanySerializer, ContactSerializer, ContractProductSerializer, HardwareCapacitySerializer, HardwareSpecSerializer, InstallationLocationSerializer, IntegrationSerializer, LookupOptionSerializer, SolutionSerializer, SystemSerializer
 from .importers import preview_upload
 from .template_import import preview_template
 from .models import CompanyAssignment
-from .site_assignments import assign_registered_site
+from .site_assignments import assign_registered_site, can_edit_site, lock_editable_site
 
 
 class SearchableModelViewSet(viewsets.ModelViewSet):
@@ -27,6 +29,14 @@ class CompanyViewSet(SearchableModelViewSet):
     queryset = Company.objects.prefetch_related("contacts", "contract_products", "solutions", "integrations", "systems", "installation_locations", "hardware_specs", "hardware_capacities", "change_history", "attachments", "dashboard_image")
     serializer_class = CompanySerializer
     search_fields = ["name", "business_code", "maintenance_code", "contract_type", "sales_manager", "support_staff", "address", "contacts__name", "solutions__product_name", "systems__ip_address"]
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        user = self.request.user
+        if user.is_authenticated and not user.is_staff:
+            assignments = CompanyAssignment.objects.filter(company_id=OuterRef("pk"), user=user)
+            return queryset.annotate(assigned_to_request_user=Exists(assignments))
+        return queryset
 
     def get_serializer(self, *args, **kwargs):
         data = kwargs.get("data")
@@ -48,24 +58,23 @@ class CompanyViewSet(SearchableModelViewSet):
         company = serializer.save(created_by=self.request.user)
         assign_registered_site(company, self.request.user)
 
-    def _require_company_manager(self, company):
-        if not self.request.user.is_staff and not CompanyAssignment.objects.filter(company=company, user=self.request.user).exists():
-            raise PermissionDenied("담당 사이트만 수정하거나 삭제할 수 있습니다.")
-
+    @transaction.atomic
     def perform_update(self, serializer):
-        self._require_company_manager(serializer.instance)
+        serializer.instance = lock_editable_site(self.request.user, serializer.instance.pk)
         serializer.save()
 
+    @transaction.atomic
     def perform_destroy(self, instance):
-        self._require_company_manager(instance)
-        instance.delete()
+        user = self.request.user
+        company = lock_editable_site(user, instance.pk)
+        if not user.is_staff and not CompanyAssignment.objects.filter(company=company, user=user).exists():
+            raise PermissionDenied("할당된 사이트만 삭제할 수 있습니다.")
+        company.delete()
 
     @action(detail=True, methods=["put"], url_path="system-rows")
     @transaction.atomic
     def system_rows(self, request, pk=None):
-        company = self.get_object()
-        self._require_company_manager(company)
-        Company.objects.select_for_update().get(pk=company.pk)
+        company = lock_editable_site(request.user, self.get_object().pk)
         rows = request.data.get("systems")
         if not isinstance(rows, list):
             return Response({"detail": "시스템 정보는 목록으로 입력하세요."}, status=400)
@@ -113,7 +122,7 @@ class CompanyViewSet(SearchableModelViewSet):
         from .excel_dates import parse_excel_date
         incoming = parse_excel_date(values.get("current_file_date"), "현행화 일자 (O5)")
         stored = company.current_file_date.isoformat() if company.current_file_date else None
-        permitted = self.request.user.is_staff or company.assignments.filter(user=self.request.user).exists()
+        permitted = can_edit_site(self.request.user, company)
         newer = bool(incoming and (stored is None or incoming > stored))
         return {"id": company.pk, "name": company.name, "existing_date": stored, "incoming_date": incoming,
                 "existing_updated_at": company.updated_at.isoformat(), "newer": newer, "can_update": newer and permitted,
@@ -132,6 +141,9 @@ class CompanyViewSet(SearchableModelViewSet):
                 values = preview["data"]
                 company_fields = {field.name for field in Company._meta.fields}
                 company_data = {key: value for key, value in values.items() if key in company_fields and key not in ("id", "created_by", "created_at", "updated_at") and value is not None}
+                if values.get("supplied_server_os_db") is not None:
+                    for field in ("supplied_server", "supplied_os", "supplied_db"):
+                        company_data.setdefault(field, values["supplied_server_os_db"])
                 if company_data.get("build_date"):
                     company_data["build_year"] = int(company_data["build_date"][:4])
                 company = Company.objects.select_for_update().filter(name=values["name"]).first()
@@ -165,7 +177,7 @@ class CompanyViewSet(SearchableModelViewSet):
         except Exception as error:
             return Response({"detail": f"엑셀 등록 중 오류: {error}"}, status=400)
         company = self.get_queryset().get(pk=company.pk)
-        return Response(CompanySerializer(company).data, status=200 if updating else 201)
+        return Response(self.get_serializer(company).data, status=200 if updating else 201)
 
     @staticmethod
     def _create_import_related(company, values):
@@ -266,8 +278,30 @@ class CompanyViewSet(SearchableModelViewSet):
         return Response(self.get_serializer(queryset, many=True).data)
 
 
-def simple_viewset(model, serializer, fields):
-    return type("GeneratedViewSet", (SearchableModelViewSet,), {"queryset": model.objects.all(), "serializer_class": serializer, "search_fields": fields})
+class SiteRecordViewSet(SearchableModelViewSet):
+    @transaction.atomic
+    def perform_create(self, serializer):
+        lock_editable_site(self.request.user, serializer.validated_data["company"].pk)
+        serializer.save()
+
+    @transaction.atomic
+    def perform_update(self, serializer):
+        instance = serializer.instance
+        target = serializer.validated_data.get("company")
+        site_ids = {instance.company_id, target.pk} if target else {instance.company_id}
+        for site_id in sorted(site_ids):
+            lock_editable_site(self.request.user, site_id)
+        serializer.instance = get_object_or_404(self.get_queryset(), pk=instance.pk, company_id=instance.company_id)
+        serializer.save()
+
+    @transaction.atomic
+    def perform_destroy(self, instance):
+        lock_editable_site(self.request.user, instance.company_id)
+        get_object_or_404(self.get_queryset(), pk=instance.pk, company_id=instance.company_id).delete()
+
+
+def simple_viewset(model, serializer, fields, base=SiteRecordViewSet):
+    return type("GeneratedViewSet", (base,), {"queryset": model.objects.all(), "serializer_class": serializer, "search_fields": fields})
 
 
 ContactViewSet = simple_viewset(Contact, ContactSerializer, ["name", "phone", "mobile", "email"])
@@ -278,5 +312,12 @@ SystemViewSet = simple_viewset(System, SystemSerializer, ["name", "set_configura
 InstallationLocationViewSet = simple_viewset(InstallationLocation, InstallationLocationSerializer, ["location_type", "path", "note"])
 HardwareSpecViewSet = simple_viewset(HardwareSpec, HardwareSpecSerializer, ["target", "cpu", "memory", "disk"])
 HardwareCapacityViewSet = simple_viewset(HardwareCapacity, HardwareCapacitySerializer, ["directory", "used_capacity", "total_capacity", "available_capacity"])
-LookupOptionViewSet = simple_viewset(LookupOption, LookupOptionSerializer, ["category", "value"])
-CompanyChangeHistoryViewSet = simple_viewset(CompanyChangeHistory, CompanyChangeHistorySerializer, ["company_name", "table_name", "action", "changed_fields"])
+LookupOptionViewSet = simple_viewset(LookupOption, LookupOptionSerializer, ["category", "value"], SearchableModelViewSet)
+
+
+class CompanyChangeHistoryViewSet(viewsets.ReadOnlyModelViewSet):
+    queryset = CompanyChangeHistory.objects.all()
+    serializer_class = CompanyChangeHistorySerializer
+    filter_backends = SearchableModelViewSet.filter_backends
+    ordering_fields = SearchableModelViewSet.ordering_fields
+    search_fields = ["company_name", "table_name", "action", "changed_fields"]

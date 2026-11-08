@@ -25,7 +25,6 @@ urlpatterns = [
     path('api/auth/signup/', auth_views.signup),
     path('api/auth/login/', auth_views.login),
     path('api/auth/password-reset/', password_recovery.request_reset),
-    path('api/auth/password-reset/confirm/', password_recovery.confirm_reset),
     path('api/auth/change-password/', auth_views.change_own_password),
     path('api/auth/profile/', auth_views.own_profile),
     path('api/auth/site-user-groups/', auth_views.site_user_groups),

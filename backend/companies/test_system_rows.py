@@ -7,6 +7,52 @@ from .views import CompanyViewSet
 
 
 class SystemRowsTests(TestCase):
+    def test_edit_permission_uses_both_support_names_and_blocks_direct_api_writes(self):
+        User = get_user_model()
+        primary = User.objects.create_user(username="primary", first_name="홍지원")
+        secondary = User.objects.create_user(username="secondary", first_name="김보조")
+        outsider = User.objects.create_user(username="outsider", first_name="이외부")
+        company = Company.objects.create(name="공동 지원", support_staff="홍지원 차장 / 김보조(대리)")
+        system = System.objects.create(company=company, name="기존")
+        client = APIClient()
+        url = f"/api/companies/{company.pk}/"
+        for user, fields in (
+            (primary, {"supplied_server": True, "supplied_os": True}),
+            (secondary, {"supplied_os": False, "supplied_db": True}),
+        ):
+            client.force_authenticate(user)
+            self.assertTrue(client.get(url).data["can_edit"])
+            self.assertEqual(client.patch(url, fields, format="json").status_code, 200)
+            self.assertEqual(client.patch(f"/api/systems/{system.pk}/", {"name": user.username}, format="json").status_code, 200)
+        company.refresh_from_db()
+        self.assertTrue(company.supplied_server)
+        self.assertFalse(company.supplied_os)
+        self.assertTrue(company.supplied_db)
+
+        client.force_authenticate(outsider)
+        self.assertFalse(client.get(url).data["can_edit"])
+        self.assertEqual(client.patch(url, {"support_staff": outsider.first_name}, format="json").status_code, 403)
+        self.assertEqual(client.patch(f"/api/systems/{system.pk}/", {"name": "변경 시도"}, format="json").status_code, 403)
+        self.assertEqual(client.post("/api/systems/", {"company": company.pk, "name": "추가 시도"}, format="json").status_code, 403)
+        self.assertEqual(client.delete(f"/api/systems/{system.pk}/").status_code, 403)
+        self.assertEqual(client.patch("/api/auth/profile/", {"name": secondary.first_name}, format="json").status_code, 400)
+        self.assertFalse(client.get(url).data["can_edit"])
+
+    def test_new_site_can_register_initial_details_and_registrant_can_edit(self):
+        user = get_user_model().objects.create_user(username="registrar", first_name="등록자")
+        client = APIClient()
+        client.force_authenticate(user)
+        payload = {"name": "신규 사이트", "registration_records": {"systems": [{"name": "신규 시스템"}]}}
+        created = client.post("/api/companies/", payload, format="json")
+        self.assertEqual(created.status_code, 201, created.data)
+        self.assertTrue(created.data["can_edit"])
+        self.assertEqual(created.data["systems"][0]["name"], "신규 시스템")
+        rejected = client.post("/api/companies/", {
+            "name": "잘못된 신규 사이트", "registration_records": {"systems": [{"database_port": "invalid"}]},
+        }, format="json")
+        self.assertEqual(rejected.status_code, 400, rejected.data)
+        self.assertFalse(Company.objects.filter(name="잘못된 신규 사이트").exists())
+
     def test_excel_multiple_rows_skip_blanks_and_stop_at_ports(self):
         grid = [[None] * 15 for _ in range(35)]
         for col, label in ((2, "Set 구성"), (4, "OS"), (6, "버전"), (7, "DB"), (9, "IP Address"), (11, "시스템접속정보"), (13, "Web접속정보")):
@@ -26,9 +72,9 @@ class SystemRowsTests(TestCase):
 
     def test_system_rows_update_is_atomic_and_permission_checked(self):
         User = get_user_model()
-        owner = User.objects.create_user(username="owner")
-        outsider = User.objects.create_user(username="outsider")
-        company = Company.objects.create(name="행 편집")
+        owner = User.objects.create_user(username="owner", first_name="홍지원")
+        outsider = User.objects.create_user(username="outsider", first_name="다른사람")
+        company = Company.objects.create(name="행 편집", support_staff="홍지원 차장 / 김보조 사원")
         CompanyAssignment.objects.create(company=company, user=owner)
         first = System.objects.create(company=company, name="기존")
         removed = System.objects.create(company=company, name="삭제할 행")

@@ -100,7 +100,7 @@ class PlatformQuantityParsingTests(SimpleTestCase):
 class PlatformQuantityUploadTests(TestCase):
     def setUp(self):
         self.client = APIClient()
-        self.client.force_authenticate(get_user_model().objects.create_user(username="platform_import_admin", is_staff=True))
+        self.client.force_authenticate(get_user_model().objects.create_user(username="platform_import_admin", first_name="플랫폼담당", is_staff=True))
 
     def upload(self, *, detail_only=False, blank=False, invalid=False, reordered=False, overrides=None):
         book = Workbook()
@@ -268,7 +268,7 @@ class PlatformQuantityUploadTests(TestCase):
         self.assertFalse(Company.objects.exists())
 
     def test_confirmed_update_replaces_details_on_existing_site(self):
-        company = Company.objects.create(name="상세 수량 업로드", current_file_date=date(2026, 10, 26))
+        company = Company.objects.create(name="상세 수량 업로드", support_staff="플랫폼담당 부장", current_file_date=date(2026, 10, 26))
         Solution.objects.create(company=company, category="sms", linux_windows_quantity=999)
         preview = self.client.post("/api/companies/import-preview/", {"file": self.upload()}, format="multipart")
         self.assertEqual(preview.status_code, 200, preview.data)

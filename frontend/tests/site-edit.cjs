@@ -9,6 +9,9 @@ const { solutionQuantityValues, solutionQuantityFields } = quantityModule.export
 const fileModule = { exports: {} };
 vm.runInNewContext(ts.transpile(fs.readFileSync('src/lib/site-files.ts', 'utf8'), { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 }), { exports: fileModule.exports, FormData });
 const { siteWriteRequest } = fileModule.exports;
+const deliveryModule = { exports: {} };
+vm.runInNewContext(ts.transpile(fs.readFileSync('src/lib/site-deliveries.ts', 'utf8'), { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 }), deliveryModule);
+const { deliveryFields, deliveryFormValues } = deliveryModule.exports;
 const source = fs.readFileSync('src/app/dashboard/page.tsx', 'utf8');
 const update = source.slice(source.indexOf('  async function updateCompany('), source.indexOf('  async function deleteCompany('));
 
@@ -19,7 +22,8 @@ test('editing saves existing solution fields and related records, then refreshes
   const calls = [];
   let all, mine, closed = false;
   const full = { ...editing, refreshed: true };
-  const context = { siteWriteRequest, solutionQuantityValues, solutionQuantityFields, editing, API: '/api', FormData: function () { return form; }, localStorage: { getItem: () => 'token' }, readSystemRows: () => [], setAllCompanies: fn => { all = fn([editing]); }, setMyCompanies: fn => { mine = fn([editing]); }, setEditing: value => { closed = value === null; }, fetch: async (url, options) => { calls.push({ url, method: options.method ?? 'GET', body: options.body && JSON.parse(options.body) }); return { ok: true, json: async () => full }; } };
+  form.set('supplied_os', 'on');
+  const context = { siteWriteRequest, solutionQuantityValues, solutionQuantityFields, deliveryFormValues, editing, API: '/api', FormData: function () { return form; }, localStorage: { getItem: () => 'token' }, readSystemRows: () => [], setAllCompanies: fn => { all = fn([editing]); }, setMyCompanies: fn => { mine = fn([editing]); }, setEditing: value => { closed = value === null; }, fetch: async (url, options) => { calls.push({ url, method: options.method ?? 'GET', body: options.body && JSON.parse(options.body) }); return { ok: true, json: async () => full }; } };
   vm.createContext(context);
   vm.runInContext(ts.transpile(update + '\nthis.run = updateCompany;', { target: ts.ScriptTarget.ES2020 }), context);
   await context.run({ preventDefault() {}, currentTarget: {} });
@@ -35,6 +39,9 @@ test('editing saves existing solution fields and related records, then refreshes
   assert.ok(calls.some(call => call.url === '/api/installation-locations/' && call.body.path === '/java'));
   assert.equal(calls[0].body.notes, 'updated');
   assert.equal(calls[0].body.build_date, '2026-10-19');
+  assert.equal(calls[0].body.supplied_server, false);
+  assert.equal(calls[0].body.supplied_os, true);
+  assert.equal(calls[0].body.supplied_db, false);
   assert.equal(all[0], full);
   assert.equal(mine[0], full);
   assert.ok(closed);
@@ -42,7 +49,7 @@ test('editing saves existing solution fields and related records, then refreshes
 
 test('initial values retain all contacts, capacity rows, and other integration detail', () => {
   const code = source.slice(source.indexOf('function editInitialValues('), source.indexOf('type SearchScope'));
-  const context = { solutionQuantityFields };
+  const context = { solutionQuantityFields, deliveryFields };
   vm.createContext(context);
   vm.runInContext(ts.transpile(code + '\nthis.read = editInitialValues;', { target: ts.ScriptTarget.ES2020 }), context);
   const values = context.read({ name: 'site', support_staff: '', contacts: [{ id: 4, name: 'one' }, { id: 5, name: 'two' }], hardware_capacities: [{ id: 9, directory: '/data', used_capacity: '0' }], integrations: [{ integration_type: 'other', enabled: true, detail: 'keep me' }] });

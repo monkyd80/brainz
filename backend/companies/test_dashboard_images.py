@@ -21,10 +21,10 @@ class DashboardImageTests(TestCase):
         override.enable()
         self.addCleanup(override.disable)
         self.media = Path(directory.name)
-        self.admin = get_user_model().objects.create_user(username="image_admin", is_staff=True)
+        self.admin = get_user_model().objects.create_user(username="image_admin", first_name="이미지관리", is_staff=True)
         self.client = APIClient()
         self.client.force_authenticate(self.admin)
-        self.site = Company.objects.create(name="대시보드 테스트")
+        self.site = Company.objects.create(name="대시보드 테스트", support_staff="이미지관리 부장 / 이미지담당 차장")
 
     def image(self, name="dashboard.png", size=(1600, 900), format="PNG"):
         output = BytesIO()
@@ -95,11 +95,14 @@ class DashboardImageTests(TestCase):
         self.assertFalse(CompanyDashboardImage.objects.exists())
         self.assertEqual([path for path in self.media.rglob("*") if path.is_file()], [])
 
-    def test_only_assigned_users_and_admins_can_register_images(self):
+    def test_assignees_and_named_support_staff_can_register_images(self):
         outsider = get_user_model().objects.create_user(username="image_outsider")
         self.client.force_authenticate(outsider)
         self.assertEqual(self.save(self.image()).status_code, 403)
         CompanyAssignment.objects.create(company=self.site, user=outsider)
+        self.assertEqual(self.save(self.image()).status_code, 200)
+        editor = get_user_model().objects.create_user(username="image_editor", first_name="이미지담당")
+        self.client.force_authenticate(editor)
         result = self.save(self.image())
         self.assertEqual(result.status_code, 200, result.data)
 
@@ -155,6 +158,8 @@ class DashboardImageTests(TestCase):
         self.assertTrue(Path(row.file.path).exists())
         self.assertTrue(CompanyDashboardImage.objects.filter(company=self.site).exists())
         CompanyAssignment.objects.create(company=self.site, user=outsider)
+        editor = get_user_model().objects.create_user(username="image_delete_editor", first_name="이미지담당")
+        self.client.force_authenticate(editor)
         with self.captureOnCommitCallbacks(execute=True):
             accepted = self.client.patch(f"/api/companies/{self.site.pk}/", {"remove_dashboard_image": True}, format="json")
         self.assertEqual(accepted.status_code, 200, accepted.data)

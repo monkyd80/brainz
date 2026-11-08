@@ -1,5 +1,7 @@
 from django.contrib.auth import get_user_model
-from .models import CompanyAssignment
+from django.shortcuts import get_object_or_404
+from rest_framework.exceptions import PermissionDenied
+from .models import Company, CompanyAssignment
 
 
 def brainz_account():
@@ -14,3 +16,28 @@ def assign_registered_site(company, creator):
     """관리자 등록은 brainz에, 일반 사용자 등록은 등록 사용자에게 할당한다."""
     assignee = brainz_account() if creator.is_staff else creator
     CompanyAssignment.objects.get_or_create(company=company, user=assignee)
+
+
+def can_edit_site(user, company, *, assigned=None):
+    if not user or not user.is_authenticated or not user.is_active:
+        return False
+    if user.is_staff:
+        return True
+    if user.username != "brainz":
+        name = user.get_full_name()
+        if name and any(name in staff for staff in company.support_staff.split("/")):
+            return True
+    if assigned is None:
+        assigned = company.assignments.filter(user=user).exists()
+    return assigned
+
+
+def require_site_editor(user, company):
+    if not can_edit_site(user, company):
+        raise PermissionDenied("관리자, 할당받은 사용자 또는 지원인력 정·부만 수정할 수 있습니다.")
+
+
+def lock_editable_site(user, company_id):
+    company = get_object_or_404(Company.objects.select_for_update(), pk=company_id)
+    require_site_editor(user, company)
+    return company

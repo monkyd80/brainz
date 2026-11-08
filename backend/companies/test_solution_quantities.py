@@ -7,9 +7,9 @@ from .models import Company, Solution
 
 class SolutionQuantityTests(TestCase):
     def setUp(self):
-        self.company = Company.objects.create(name="솔루션 세부 수량 테스트")
+        self.company = Company.objects.create(name="솔루션 세부 수량 테스트", support_staff="수량담당 차장")
         self.client = APIClient()
-        self.client.force_authenticate(get_user_model().objects.create_user(username="quantity_admin", is_staff=True))
+        self.client.force_authenticate(get_user_model().objects.create_user(username="quantity_admin", first_name="수량담당", is_staff=True))
 
     def test_quantities_round_trip_and_can_be_cleared(self):
         cases = {
