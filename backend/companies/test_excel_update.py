@@ -19,11 +19,12 @@ class ExcelUpdateTests(TestCase):
         self.client = APIClient()
         self.client.force_authenticate(self.admin)
 
-    def file(self, incoming=20260701, invalid_port=False):
+    def file(self, incoming=20260701, invalid_port=False, name="동일 사이트"):
         book = Workbook()
         sheet = book.active
         sheet.title = "현행화"
-        sheet.cell(2, 3, "동일 사이트")
+        sheet.cell(2, 3, name)
+        sheet.cell(7, 12, "Y")
         if incoming is not None:
             sheet.cell(5, 15, incoming)
         sheet.cell(13, 3, "TMS")
@@ -58,7 +59,18 @@ class ExcelUpdateTests(TestCase):
         self.assertEqual(self.company.current_file_date, date(2026, 6, 12))
         self.assertEqual(self.company.systems.get().name, "기존 시스템")
 
+    def test_legacy_combined_delivery_does_not_check_new_site_options(self):
+        response = self.client.post(
+            "/api/companies/import-commit/", {"file": self.file(name="새 사이트")}, format="multipart",
+        )
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertFalse(response.data["supplied_server"])
+        self.assertFalse(response.data["supplied_os"])
+        self.assertFalse(response.data["supplied_db"])
+
     def test_confirm_updates_existing_site_and_preserves_assignment(self):
+        self.company.supplied_os = True
+        self.company.save(update_fields=["supplied_os"])
         duplicate = self.preview()
         response = self.commit(True, duplicate["existing_updated_at"])
         self.assertEqual(response.status_code, 200, response.data)
@@ -67,6 +79,9 @@ class ExcelUpdateTests(TestCase):
         self.company.refresh_from_db()
         self.assertEqual(self.company.current_file_date, date(2026, 7, 1))
         self.assertEqual(self.company.notes, "새 메모")
+        self.assertFalse(self.company.supplied_server)
+        self.assertTrue(self.company.supplied_os)
+        self.assertFalse(self.company.supplied_db)
         self.assertEqual(self.company.created_by, self.owner)
         self.assertEqual(list(self.company.assignments.values_list("user_id", flat=True)), [self.owner.pk])
         self.assertEqual(self.company.systems.get().name, "새 시스템")

@@ -141,9 +141,6 @@ class CompanyViewSet(SearchableModelViewSet):
                 values = preview["data"]
                 company_fields = {field.name for field in Company._meta.fields}
                 company_data = {key: value for key, value in values.items() if key in company_fields and key not in ("id", "created_by", "created_at", "updated_at") and value is not None}
-                if values.get("supplied_server_os_db") is not None:
-                    for field in ("supplied_server", "supplied_os", "supplied_db"):
-                        company_data.setdefault(field, values["supplied_server_os_db"])
                 if company_data.get("build_date"):
                     company_data["build_year"] = int(company_data["build_date"][:4])
                 company = Company.objects.select_for_update().filter(name=values["name"]).first()

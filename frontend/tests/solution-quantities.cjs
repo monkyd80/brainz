@@ -91,20 +91,47 @@ test('center details and site summaries show category counts, including zero', (
   }
 });
 
-test('unchecked delivery types are absent from site details and product search', () => {
-  const info = source.slice(source.indexOf('function InfoGrid('), source.indexOf('\n', source.indexOf('function InfoGrid(')));
-  const search = source.slice(source.indexOf('  const rowsFor = '), source.indexOf('  const textResults = '));
-  const terms = source.slice(source.indexOf('const searchTerms = '), source.indexOf('type SearchRow'));
-  const { Info, productRows, tokenize } = evaluate(
-    info + '\n' + terms + search + '\nthis.Info = InfoGrid; this.productRows = company => rowsFor(company, "product"); this.tokenize = searchTerms;',
-    { React, ...library, HISTORY_FIELD_LABELS: {} },
-  );
+test('site details list the checked delivery types once on a single line', () => {
+  const info = source.slice(source.indexOf('function InfoGrid('), source.indexOf('function Hardware('));
+  const { Info } = evaluate(info + '\nthis.Info = InfoGrid;', { React, ...library });
   const company = { name: '납품 테스트', supplied_server: true, supplied_os: false, supplied_db: true };
   const html = renderToStaticMarkup(React.createElement(Info, { company }));
-  assert.match(html, /Server 납품/);
-  assert.match(html, /DB 납품/);
-  assert.doesNotMatch(html, /OS 납품/);
-  assert.equal(Array.from(productRows(company), row => row.content).join(', '), 'Server 납품, DB 납품');
-  assert.equal(productRows({ ...company, supplied_server: false, supplied_db: false }).length, 0);
-  assert.equal(Array.from(tokenize('DB 납품')).join(', '), 'db 납품');
+  assert.match(html, />Server 납품 \/ DB 납품<\/dd>/);
+  assert.doesNotMatch(html, /OS 납품|>납품<\/dd>/);
+  const unchecked = renderToStaticMarkup(React.createElement(Info, {
+    company: { ...company, supplied_server: false, supplied_db: false },
+  }));
+  assert.doesNotMatch(unchecked, /납품 항목|Server 납품|DB 납품/);
+});
+
+test('product search joins matching content by site and item', () => {
+  const terms = source.slice(source.indexOf('const searchTerms = '), source.indexOf('type SearchRow'));
+  const search = source.slice(source.indexOf('  const rowsFor = '), source.indexOf('  const sortedTextResults = '));
+  const { searchRows } = evaluate(
+    terms + '\nthis.searchRows = (companies, conditions, resultQuery = "") => {\n' + search + '\nreturn textResults; };',
+    { ...library, HISTORY_FIELD_LABELS: { package_name: '패키지' }, useMemo: run => run() },
+  );
+  const company = {
+    id: 1, name: '납품 테스트', supplied_server: true, supplied_os: false, supplied_db: true,
+    contract_products: [
+      { package_name: 'EMS Basic' }, { package_name: 'EMS Pro' }, { package_name: 'EMS Pro' },
+    ],
+  };
+  const sites = [company, { ...company, id: 2, supplied_server: false, supplied_db: false }];
+  const results = searchRows(sites, [{ category: 'product', value: '납품 EMS' }]);
+  assert.deepEqual(Array.from(results, row => [row.company.id, row.item, row.content]), [
+    [1, '계약·제품 · 패키지', 'EMS Basic / EMS Pro'],
+    [1, '계약·제품 · 납품', 'Server 납품 / DB 납품'],
+    [2, '계약·제품 · 패키지', 'EMS Basic / EMS Pro'],
+  ]);
+  assert.equal(searchRows(sites, [{ category: 'product', value: '납품' }], 'DB 납품')[0].content, 'DB 납품');
+  assert.equal(searchRows(sites, [{ category: 'product', value: 'OS 납품' }]).length, 0);
+  assert.deepEqual(Array.from(searchRows(sites, [{ category: 'product', value: ' ALL ' }]), row => row.content),
+    ['EMS Basic / EMS Pro', 'Server 납품 / DB 납품', 'EMS Basic / EMS Pro']);
+  assert.ok(searchRows([{ ...company, id: 3, current_file_date: '2026-04-08' }], [
+    { category: 'registrationDate', value: 'all' }, { category: 'product', value: 'DB 납품' },
+  ]).some(row => row.content === '2026-04-08'));
+  assert.equal(searchRows(sites, [
+    { category: 'product', value: 'all' }, { category: 'site', value: '일치하지 않는 사이트' },
+  ]).length, 0);
 });

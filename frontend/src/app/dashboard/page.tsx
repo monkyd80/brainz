@@ -616,7 +616,36 @@ function RecordSection({ title, rows }: { title: string; rows?: Record<string, u
     })}</div> : <p className="mt-3 text-sm text-slate-500">등록된 정보가 없습니다.</p>}
   </section>;
 }
-function InfoGrid({ company }: { company: Company }) { const data = [['계약 구분',company.contract_type],['사업 코드',company.business_code],['유지보수 코드',company.maintenance_code],['구축 날짜',company.build_date || company.build_year?.toString()],['등록·수정 날짜',company.current_file_date],...checkedDeliveries(company).map(label => [label, "납품"]),['참고 사항',company.notes],['특이사항 및 전달사항',company.special_notes],['담당 영업',company.sales_manager],['지원 인력',company.support_staff],['위치',company.address],['원격 지원',company.remote_support ? '가능' : '미사용']]; return <div className="rounded-xl bg-white p-5 shadow-sm ring-1 ring-slate-200"><h3 className="sticky top-0 z-10 border-b border-slate-100 bg-white py-3 font-bold">기본 정보</h3><dl className="mt-4 grid gap-x-6 gap-y-4 sm:grid-cols-2">{data.map(([label,value]) => <div key={label} className="border-b border-slate-100 pb-3"><dt className="text-xs text-slate-500">{label}</dt><dd className="mt-1 text-sm font-medium">{value || "미입력"}</dd></div>)}</dl></div> }
+function InfoGrid({ company }: { company: Company }) {
+  const deliveries = checkedDeliveries(company).join(" / ");
+  const data = [
+    ["계약 구분", company.contract_type],
+    ["사업 코드", company.business_code],
+    ["유지보수 코드", company.maintenance_code],
+    ["구축 날짜", company.build_date || company.build_year?.toString()],
+    ["등록·수정 날짜", company.current_file_date],
+    ["참고 사항", company.notes],
+    ["특이사항 및 전달사항", company.special_notes],
+    ["담당 영업", company.sales_manager],
+    ["지원 인력", company.support_staff],
+    ["위치", company.address],
+    ["원격 지원", company.remote_support ? "가능" : "미사용"],
+  ];
+
+  return <div className="rounded-xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
+    <h3 className="sticky top-0 z-10 border-b border-slate-100 bg-white py-3 font-bold">기본 정보</h3>
+    <dl className="mt-4 grid gap-x-6 gap-y-4 sm:grid-cols-2">
+      {data.map(([label, value]) => <div key={label} className="border-b border-slate-100 pb-3">
+        <dt className="text-xs text-slate-500">{label}</dt>
+        <dd className="mt-1 text-sm font-medium">{value || "미입력"}</dd>
+      </div>)}
+      {deliveries && <div className="border-b border-slate-100 pb-3">
+        <dt className="text-xs text-slate-500">납품 항목</dt>
+        <dd className="mt-1 text-sm font-medium">{deliveries}</dd>
+      </div>}
+    </dl>
+  </div>;
+}
 function Hardware({ company }: { company: Company }) {
   const targetLabel: Record<string, string> = { manager_1: "Manager #1", manager_2: "Manager #2", database: "DB" };
   return <section className="rounded-xl bg-white p-5 shadow-sm ring-1 ring-slate-200"><h3 className="sticky top-0 z-10 bg-white py-3 font-bold">H/W 구성 정보</h3>{company.hardware_specs.length ? <div className="mt-4 max-h-[45vh] overflow-auto"><table className="w-full min-w-[560px] text-left text-sm"><thead className="sticky top-0 z-20 border-b bg-white text-slate-500"><tr><th className="pb-3">대상</th><th className="pb-3">CPU</th><th className="pb-3">메모리 (G)</th><th className="pb-3">디스크 (G)</th><th className="pb-3">기타</th></tr></thead><tbody>{company.hardware_specs.map((spec) => <tr key={spec.id} className="border-b border-slate-100"><td className="py-3 font-medium">{targetLabel[spec.target] ?? spec.target}</td><td>{spec.cpu || "-"}</td><td>{spec.memory || "-"}</td><td>{spec.disk || "-"}</td><td className="whitespace-pre-wrap break-words">{spec.other_detail || "-"}</td></tr>)}</tbody></table></div> : <p className="mt-3 text-sm text-slate-500">등록된 H/W 정보가 없습니다.</p>}</section>
@@ -631,6 +660,7 @@ const searchCategoryLabel: Record<SearchCategory, string> = {
 const searchTerms = (value: string) => (value.match(/"[^"]*"|'[^']*'|\b(?:server|os|db)\s+납품(?=\s|$)|[^\s]+/gi) ?? [])
   .map(term => term.replace(/^(["'])|(["'])$/g, "").toLowerCase().replace(/^(server|os|db)\s+납품$/, "$1 납품"))
   .filter(Boolean);
+const isAllSearch = (value: string) => value.trim().toLowerCase() === "all";
 type SearchRow = { company: Company; item: string; content: string };
 type SolutionCondition = { solution: string; minimum: string };
 type CapacityCondition = { directory: string; field: "used_capacity" | "total_capacity" | "available_capacity"; minimum: string };
@@ -687,11 +717,14 @@ function Search({ companies, onOpen }: { companies: Company[]; onOpen: (company:
 
   const textResults = useMemo(() => {
     const active = conditions.filter((condition) => condition.value.trim());
-    const rows = companies.flatMap((company) => {
-      if (!active.length) return [];
+    if (!active.length) return [];
+    const terms = searchTerms(resultQuery);
+    return companies.flatMap((company) => {
       const groups = active.map((condition) => {
+        const rows = rowsFor(company, condition.category);
+        if (isAllSearch(condition.value)) return rows;
         const date = condition.category === "registrationDate" ? normalizeSearchDate(condition.value) : null;
-        return rowsFor(company, condition.category).filter((row) => {
+        return rows.filter((row) => {
           if (condition.category === "registrationDate") {
             const registered = normalizeSearchDate(row.content);
             return date !== null && registered !== null && registered >= date;
@@ -700,11 +733,16 @@ function Search({ companies, onOpen }: { companies: Company[]; onOpen: (company:
         });
       });
       if (groups.some((group) => !group.length)) return [];
-      const unique = new Map<string, { item: string; content: string }>(); groups.flat().forEach((row) => unique.set(`${row.item}|${row.content}`, row));
-      return [...unique.values()].map((row) => ({ company, ...row }));
+      const matchesByItem = new Map<string, Set<string>>();
+      for (const { item, content } of groups.flat()) {
+        const searchable = [company.name, item, content].join(" ").toLowerCase();
+        if (terms.length && !terms.some(term => searchable.includes(term))) continue;
+        const matches = matchesByItem.get(item) ?? new Set<string>();
+        matches.add(content);
+        matchesByItem.set(item, matches);
+      }
+      return Array.from(matchesByItem, ([item, matches]) => ({ company, item, content: [...matches].join(" / ") }));
     });
-    const terms = searchTerms(resultQuery);
-    return !terms.length ? rows : rows.filter((row) => terms.some((term) => `${row.company.name} ${row.item} ${row.content}`.toLowerCase().includes(term)));
   }, [companies, conditions, resultQuery]);
 
   const sortedTextResults = sortRows(textResults, textSort, (row, key) => key === "site" ? row.company.name : row[key]);
@@ -725,7 +763,7 @@ function Search({ companies, onOpen }: { companies: Company[]; onOpen: (company:
       <div className="mt-4 border-t border-blue-100 pt-4"><div className="mb-2 flex items-center justify-between"><p className="text-sm font-semibold text-slate-700">H/W 용량 조건 <span className="ml-1 text-xs font-normal text-slate-500">(여러 조건은 모두 충족)</span></p><button type="button" onClick={() => setCapacityConditions((rows) => [...rows, { directory: "", field: "available_capacity", minimum: "" }])} className="rounded-lg border border-blue-300 bg-white px-3 py-2 text-sm font-semibold text-blue-700 transition hover:bg-blue-600 hover:text-white">+ 용량 조건</button></div><div className="space-y-2">{capacityConditions.map((condition, index) => <div key={index} className="flex flex-wrap items-center gap-2"><select value={condition.directory} onChange={(event) => updateCapacity(index, "directory", event.target.value)} className="min-w-48 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"><option value="">전체 디렉토리</option>{capacityDirectories.map((directory) => <option key={directory}>{directory}</option>)}</select><select value={condition.field} onChange={(event) => updateCapacity(index, "field", event.target.value)} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"><option value="used_capacity">사용량</option><option value="total_capacity">전체 용량</option><option value="available_capacity">가용량</option></select><span className="text-sm text-slate-600">이상 (≥)</span><input type="number" min="0" value={condition.minimum} onChange={(event) => updateCapacity(index, "minimum", event.target.value)} placeholder="용량" className="w-24 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm" />{capacityConditions.length > 1 && <button type="button" onClick={() => setCapacityConditions((rows) => rows.filter((_, i) => i !== index))} className="rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-600 hover:border-red-400 hover:text-red-600">삭제</button>}</div>)}</div></div>
       {hasSolutionSearch && <p className="mt-3 text-sm font-semibold text-blue-700">조건 일치 사이트 {solutionResults.length}건 · H/W 사양 및 현재 용량을 아래에서 확인하세요.</p>}
     </div>
-    <div><div className="flex items-center justify-between gap-4"><div><h3 className="font-bold">카테고리 문자열 검색</h3><p className="mt-1 text-xs text-slate-500">한 검색어 칸의 공백은 OR 조건이며, 조건을 추가하면 AND 조건입니다.</p></div><button type="button" onClick={() => setConditions((rows) => [...rows, { category: "site", value: "" }])} className="grid h-9 w-9 place-items-center rounded-md border border-slate-300 bg-white text-xl font-semibold text-slate-700 transition hover:border-blue-600 hover:bg-blue-600 hover:text-white">+</button></div><div className="mt-4 space-y-2">{conditions.map((condition, index) => <div key={index} className="flex gap-2"><select value={condition.category} onChange={(event) => updateText(index, "category", event.target.value)} className="w-40 rounded border border-slate-300 px-2 py-2 text-sm">{(Object.keys(searchCategoryLabel) as SearchCategory[]).map((key) => <option key={key} value={key}>{searchCategoryLabel[key]}</option>)}</select><input value={condition.value} onChange={(event) => updateText(index, "value", event.target.value)} aria-label={`${searchCategoryLabel[condition.category]} 검색 문자열`} onFocus={() => { if (condition.category === "registrationDate") setConditions(rows => rows.map((row, i) => i === index ? { ...row, dateHintHidden: true } : row)); }} placeholder={condition.category === "registrationDate" ? condition.dateHintHidden ? "" : "날짜 입력시 해당 날짜 이후 데이터 검색" : "검색 문자열 입력"} aria-invalid={condition.category === "registrationDate" && Boolean(condition.value.trim()) && !normalizeSearchDate(condition.value)} title={condition.category === "registrationDate" ? "20261016(날짜), 202610(연월), 2026(연도) 또는 하이픈으로 구분하여 입력하세요. 연월은 해당 월 1일, 연도는 1월 1일부터 검색합니다." : undefined} className="min-w-0 flex-1 rounded border border-slate-300 px-3 py-2 text-sm" />{conditions.length > 1 && <button type="button" onClick={() => setConditions((rows) => rows.filter((_, i) => i !== index))} className="rounded border border-slate-300 px-3 text-sm text-slate-600">−</button>}</div>)}</div></div>
+    <div><div className="flex items-center justify-between gap-4"><div><h3 className="font-bold">카테고리 문자열 검색</h3><p className="mt-1 text-xs text-slate-500">한 검색어 칸의 공백은 OR 조건이며, 조건을 추가하면 AND 조건입니다. 한 칸에 <code>all</code>만 입력하면 선택한 카테고리의 모든 항목을 검색합니다.</p></div><button type="button" onClick={() => setConditions((rows) => [...rows, { category: "site", value: "" }])} className="grid h-9 w-9 place-items-center rounded-md border border-slate-300 bg-white text-xl font-semibold text-slate-700 transition hover:border-blue-600 hover:bg-blue-600 hover:text-white">+</button></div><div className="mt-4 space-y-2">{conditions.map((condition, index) => <div key={index} className="flex gap-2"><select value={condition.category} onChange={(event) => updateText(index, "category", event.target.value)} className="w-40 rounded border border-slate-300 px-2 py-2 text-sm">{(Object.keys(searchCategoryLabel) as SearchCategory[]).map((key) => <option key={key} value={key}>{searchCategoryLabel[key]}</option>)}</select><input value={condition.value} onChange={(event) => updateText(index, "value", event.target.value)} aria-label={`${searchCategoryLabel[condition.category]} 검색 문자열`} onFocus={() => { if (condition.category === "registrationDate") setConditions(rows => rows.map((row, i) => i === index ? { ...row, dateHintHidden: true } : row)); }} placeholder={condition.category === "registrationDate" ? condition.dateHintHidden ? "" : "날짜 입력시 해당 날짜 이후 데이터 검색" : "검색 문자열 입력"} aria-invalid={condition.category === "registrationDate" && Boolean(condition.value.trim()) && !isAllSearch(condition.value) && !normalizeSearchDate(condition.value)} title={condition.category === "registrationDate" ? "20261016(날짜), 202610(연월), 2026(연도) 또는 하이픈으로 구분하여 입력하세요. 연월은 해당 월 1일, 연도는 1월 1일부터 검색합니다. 전체 등록일자는 all을 입력하세요." : undefined} className="min-w-0 flex-1 rounded border border-slate-300 px-3 py-2 text-sm" />{conditions.length > 1 && <button type="button" onClick={() => setConditions((rows) => rows.filter((_, i) => i !== index))} className="rounded border border-slate-300 px-3 text-sm text-slate-600">−</button>}</div>)}</div></div>
     <div className="border-t pt-5"><div className="flex items-center justify-between gap-3"><p className="text-sm font-semibold">검색 결과 <span className="text-blue-600">{hasSolutionSearch ? solutionResults.length : textResults.length}</span>건</p><input value={resultQuery} onChange={(event) => setResultQuery(event.target.value)} placeholder="검색 결과 내 검색" className="w-56 max-w-full rounded border border-slate-300 px-3 py-2 text-sm" /></div>
       {hasSolutionSearch ? <SolutionResultList companies={solutionResults} conditions={activeSolutionConditions} onOpen={onOpen} /> : <div className="mt-3 max-h-[45vh] overflow-auto rounded-lg border border-slate-200"><div className="sticky top-0 z-20 grid min-w-[560px] grid-cols-[minmax(150px,1fr)_minmax(160px,1.2fr)_minmax(180px,2fr)] gap-3 border-b bg-slate-50 px-4 py-3 text-center text-xs font-semibold text-slate-500"><ColumnSortButton label="사이트명" column="site" sort={textSort} onSort={key => setTextSort(current => nextColumnSort(current, key))} /><ColumnSortButton label="항목" column="item" sort={textSort} onSort={key => setTextSort(current => nextColumnSort(current, key))} /><ColumnSortButton label="검색된 내용" column="content" sort={textSort} onSort={key => setTextSort(current => nextColumnSort(current, key))} /></div>{textResults.length ? sortedTextResults.map((row, index) => <div key={`${row.company.id}-${row.item}-${row.content}-${index}`} className="grid min-w-[560px] grid-cols-[minmax(150px,1fr)_minmax(160px,1.2fr)_minmax(180px,2fr)] gap-3 border-b px-4 py-3 text-sm last:border-0"><button type="button" onClick={() => onOpen(row.company)} className="text-left font-semibold text-blue-700 hover:underline">{row.company.name}</button><span>{row.item}</span><span className="break-words text-slate-600">{row.content}</span></div>) : <p className="p-8 text-center text-sm text-slate-400">조건에 맞는 항목이 없습니다.</p>}</div>}
     </div>
