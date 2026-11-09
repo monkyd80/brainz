@@ -3,6 +3,7 @@ from django.core.serializers.json import DjangoJSONEncoder
 from django.conf import settings
 from .file_uploads import company_attachment_path
 from .dashboard_images import dashboard_image_path
+from .validators import validate_contact_emails
 
 
 class Company(models.Model):
@@ -97,7 +98,7 @@ class Contact(models.Model):
     name = models.CharField("이름", max_length=100, db_index=True)
     phone = models.CharField("유선번호", max_length=50, blank=True, db_index=True)
     mobile = models.CharField("휴대전화", max_length=50, blank=True, db_index=True)
-    email = models.EmailField(blank=True, db_index=True)
+    email = models.CharField(max_length=254, blank=True, db_index=True, validators=[validate_contact_emails])
     fax = models.CharField("FAX", max_length=50, blank=True)
     inspection_report_submitted = models.BooleanField("점검지 제출", default=False)
     inspection_report_detail = models.TextField("점검지 제출 상세", blank=True)

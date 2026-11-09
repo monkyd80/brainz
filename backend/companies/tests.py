@@ -11,6 +11,32 @@ from .models import Company
 from .template_import import template_bytes
 
 
+class ContactEmailTests(TestCase):
+    def test_site_registration_and_contact_edit_accept_multiple_emails(self):
+        user = get_user_model().objects.create_user(username="contact_editor")
+        client = APIClient()
+        client.force_authenticate(user)
+
+        emails = "first@example.com second@example.com"
+        created = client.post("/api/companies/", {
+            "name": "연락처 테스트 사이트",
+            "registration_records": {"contacts": [{"name": "담당자", "email": emails}]},
+        }, format="json")
+        self.assertEqual(created.status_code, 201, created.data)
+        contact = created.data["contacts"][0]
+        self.assertEqual(contact["email"], emails)
+
+        contact_url = f"/api/contacts/{contact['id']}/"
+        updated_emails = "first@example.com, second@example.com; third@example.com"
+        updated = client.patch(contact_url, {"email": updated_emails}, format="json")
+        self.assertEqual(updated.status_code, 200, updated.data)
+
+        invalid = client.patch(contact_url, {"email": "first@example.com invalid"}, format="json")
+        self.assertEqual(invalid.status_code, 400)
+        self.assertIn("email", invalid.data)
+        self.assertEqual(client.get(contact_url).data["email"], updated_emails)
+
+
 class SiteTemplateImportTests(TestCase):
     def setUp(self):
         self.user = get_user_model().objects.create_user(username="template_admin", password="test-password", is_staff=True)
