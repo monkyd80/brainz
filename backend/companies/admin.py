@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Company, Contact, ContractProduct, HardwareSpec, InstallationLocation, Integration, Solution, System
+from .models import Company, Contact, ContractProduct, HardwareSpec, InstallationLocation, Integration, Notice, Solution, System
 
 
 class ContactInline(admin.TabularInline):
@@ -18,6 +18,12 @@ class CompanyAdmin(admin.ModelAdmin):
     list_filter = ("status", "contract_type", "remote_support", "supplied_server", "supplied_os", "supplied_db")
     search_fields = ("name", "business_code", "maintenance_code", "address", "sales_manager")
     inlines = (ContactInline, SolutionInline)
+
+
+@admin.register(Notice)
+class NoticeAdmin(admin.ModelAdmin):
+    list_display = ("title", "created_at")
+    search_fields = ("title", "body")
 
 
 admin.site.register((Contact, ContractProduct, Integration, System, InstallationLocation, HardwareSpec))

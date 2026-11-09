@@ -3,7 +3,7 @@ from rest_framework import serializers
 from .file_uploads import SiteUploadFileField, save_site_attachments
 from .dashboard_images import DashboardUploadField, save_dashboard_image
 from .models import CompanyDashboardImage, CompanyAttachment, Company, CompanyChangeHistory, Contact, ContractProduct, HardwareCapacity, HardwareSpec, InstallationLocation, Integration, LookupOption, Solution, System
-from .site_assignments import can_edit_site
+from .site_assignments import can_edit_site, transfer_site
 
 
 class RelatedSerializer(serializers.ModelSerializer):
@@ -63,6 +63,7 @@ REGISTRATION_RECORDS = {
 
 class CompanySerializer(serializers.ModelSerializer):
     can_edit = serializers.SerializerMethodField()
+    transfer_to = serializers.IntegerField(min_value=1, max_value=2147483647, required=False, write_only=True)
     registration_records = serializers.DictField(child=serializers.ListField(child=serializers.DictField()), write_only=True, required=False)
     dashboard_image = DashboardImageSerializer(read_only=True)
     remove_dashboard_image = serializers.BooleanField(write_only=True, required=False, default=False)
@@ -92,6 +93,8 @@ class CompanySerializer(serializers.ModelSerializer):
         return can_edit_site(request.user, company, assigned=getattr(company, "assigned_to_request_user", None))
 
     def validate(self, attrs):
+        if "transfer_to" in attrs and self.instance is None:
+            raise serializers.ValidationError({"transfer_to": "등록된 사이트만 이관할 수 있습니다."})
         if "registration_records" in attrs and (
             self.instance or attrs["registration_records"].keys() - REGISTRATION_RECORDS.keys()
         ):
@@ -132,9 +135,13 @@ class CompanySerializer(serializers.ModelSerializer):
 
     @transaction.atomic
     def update(self, instance, validated_data):
+        recipient = validated_data.pop("transfer_to", None)
+        previous_name = instance.name
         files = validated_data.pop("uploaded_files", [])
         dashboard_image = validated_data.pop("dashboard_image_upload", None)
         remove_dashboard_image = validated_data.pop("remove_dashboard_image", False)
         company = super().update(instance, validated_data)
+        if recipient is not None:
+            transfer_site(company, recipient, previous_name)
         self._save_files(company, files, dashboard_image, remove_dashboard_image)
         return company

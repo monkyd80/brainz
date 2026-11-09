@@ -8,6 +8,7 @@ from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.response import Response
 from django.conf import settings
+from django.contrib.auth import get_user_model
 from django.db import transaction
 from django.db.models import Exists, OuterRef
 from django.http import FileResponse, HttpResponse
@@ -60,8 +61,18 @@ class CompanyViewSet(SearchableModelViewSet):
 
     @transaction.atomic
     def perform_update(self, serializer):
-        serializer.instance = lock_editable_site(self.request.user, serializer.instance.pk)
-        serializer.save()
+        user = self.request.user
+        recipient_id = serializer.validated_data.get("transfer_to")
+        recipient = None
+        if recipient_id is not None:
+            # User deletion and admin reassignment lock the user before the site.
+            recipient = get_user_model().objects.select_for_update(no_key=True).filter(
+                pk=recipient_id, is_active=True, is_staff=False,
+            ).exclude(pk=user.pk).first()
+        serializer.instance = lock_editable_site(user, serializer.instance.pk)
+        if recipient_id is not None and recipient is None:
+            raise ValidationError({"detail": "이관할 활성 담당 사용자를 선택하세요."})
+        serializer.save(transfer_to=recipient)
 
     @transaction.atomic
     def perform_destroy(self, instance):

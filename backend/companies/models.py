@@ -272,6 +272,28 @@ class CompanyAssignment(models.Model):
         constraints = [models.UniqueConstraint(fields=["company", "user"], name="unique_company_user_assignment")]
 
 
+class Notice(models.Model):
+    title = models.CharField("제목", max_length=200)
+    body = models.TextField("내용")
+    created_at = models.DateTimeField("등록일", auto_now_add=True)
+
+    class Meta:
+        ordering = ["-id"]
+        verbose_name = "공지사항"
+        verbose_name_plural = "공지사항"
+
+    def __str__(self):
+        return self.title
+
+
+class NoticeRead(models.Model):
+    notice = models.ForeignKey(Notice, on_delete=models.CASCADE, related_name="reads")
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["user", "notice"], name="unique_user_notice_read")]
+
+
 class UserProfile(models.Model):
     user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="employee_profile")
     employee_number = models.CharField("사번", max_length=50, blank=True, default="")

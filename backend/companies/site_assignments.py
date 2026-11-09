@@ -1,7 +1,7 @@
 from django.contrib.auth import get_user_model
 from django.shortcuts import get_object_or_404
 from rest_framework.exceptions import PermissionDenied
-from .models import Company, CompanyAssignment
+from .models import Company, CompanyAssignment, Notice
 
 
 def brainz_account():
@@ -16,6 +16,20 @@ def assign_registered_site(company, creator):
     """관리자 등록은 brainz에, 일반 사용자 등록은 등록 사용자에게 할당한다."""
     assignee = brainz_account() if creator.is_staff else creator
     CompanyAssignment.objects.get_or_create(company=company, user=assignee)
+
+
+def transfer_site(company, recipient, previous_name):
+    assignments = list(company.assignments.select_related("user").order_by("user__username"))
+    if len(assignments) == 1 and assignments[0].user_id == recipient.pk:
+        return
+    previous_users = ", ".join(assignment.user.get_full_name() or assignment.user.username for assignment in assignments)
+    recipient_name = recipient.get_full_name() or recipient.username
+    company.assignments.exclude(user=recipient).delete()
+    CompanyAssignment.objects.get_or_create(company=company, user=recipient)
+    Notice.objects.create(
+        title="사이트 이관",
+        body=f"{previous_users or '미할당'}:{previous_name} -> {recipient_name}:{company.name}\n이관이 완료되었습니다.",
+    )
 
 
 def can_edit_site(user, company, *, assigned=None):
