@@ -31,6 +31,11 @@ class CompanyViewSet(SearchableModelViewSet):
     serializer_class = CompanySerializer
     search_fields = ["name", "business_code", "maintenance_code", "contract_type", "sales_manager", "support_staff", "address", "contacts__name", "solutions__product_name", "systems__ip_address"]
 
+    def get_serializer_class(self):
+        if self.action in ("retrieve", "update", "partial_update") and self.request.query_params.get("include_history") == "0":
+            return CompanyDashboardSerializer
+        return super().get_serializer_class()
+
     def get_queryset(self):
         queryset = super().get_queryset()
         if self.action == "change_history":
@@ -40,7 +45,7 @@ class CompanyViewSet(SearchableModelViewSet):
             "installation_locations", "hardware_specs", "hardware_capacities",
             "attachments", "dashboard_image",
         )
-        if self.action != "dashboard":
+        if self.get_serializer_class() is not CompanyDashboardSerializer:
             queryset = queryset.prefetch_related("change_history")
         user = self.request.user
         if user.is_authenticated and not user.is_staff:
@@ -302,7 +307,11 @@ class CompanyViewSet(SearchableModelViewSet):
     @action(detail=True, methods=["get"], url_path="change-history", serializer_class=CompanyChangeHistorySerializer)
     def change_history(self, request, pk=None):
         company = self.get_object()
-        return Response(self.get_serializer(company.change_history.all(), many=True).data)
+        history = company.change_history.all()
+        if request.query_params.get("summary") == "1":
+            site_entries = history.filter(table_name=Company._meta.db_table)
+            return Response(list(site_entries.values("id", "table_name", "action", "changed_at")))
+        return Response(self.get_serializer(history, many=True).data)
 
     @action(detail=False, methods=["get"])
     def mine(self, request):

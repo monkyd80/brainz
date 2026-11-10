@@ -89,9 +89,13 @@ function AdminUserManagementEditor({ onClose }: { onClose: () => void }) {
   return <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/40 p-5"><section className="w-full max-w-5xl rounded-2xl bg-white p-6 shadow-2xl"><fieldset disabled={saving} className="min-w-0"><div className="flex items-center"><h2 className="flex-1 text-center text-xl font-bold">사용자 관리</h2><button type="button" onClick={() => setAdding(true)} className="mr-3 rounded-lg border border-blue-600 bg-white px-3 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-600 hover:text-white">+ 사용자 추가</button><button type="button" onClick={onClose} aria-label="닫기" className="grid h-10 w-10 place-items-center rounded-full bg-slate-100 text-2xl font-bold ring-1 ring-slate-300">×</button></div>{adding && <div className="mt-4 grid grid-cols-5 gap-2 rounded-xl bg-slate-50 p-3"><input value={form.username} onChange={(event) => setForm({ ...form, username: event.target.value })} placeholder="사용자 ID" className="rounded border p-2 text-sm" /><input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder="이름" className="rounded border p-2 text-sm" /><input value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} placeholder="이메일" className="rounded border p-2 text-sm" /><input type="password" value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} placeholder="비밀번호 (8자 이상)" className="rounded border p-2 text-sm" /><button type="button" onClick={create} className="rounded bg-blue-600 px-3 text-sm font-semibold text-white">추가</button></div>}<div className="mt-4 max-h-[65vh] overflow-auto"><div className="min-w-[800px]"><div className="sticky top-0 z-20 grid grid-cols-[1fr_1fr_1.5fr_1fr_96px_132px] gap-2 border-b bg-white py-3 text-center text-sm font-bold text-slate-500"><ColumnSortButton label="사용자 ID" column="username" sort={userSort} onSort={key => setUserSort(current => nextColumnSort(current, key))} /><ColumnSortButton label="이름" column="name" sort={userSort} onSort={key => setUserSort(current => nextColumnSort(current, key))} /><ColumnSortButton label="이메일" column="email" sort={userSort} onSort={key => setUserSort(current => nextColumnSort(current, key))} /><ColumnSortButton label="사번" column="employee_number" sort={userSort} onSort={key => setUserSort(current => nextColumnSort(current, key))} /><ColumnSortButton label="관리자 권한" column="is_admin" sort={userSort} onSort={key => setUserSort(current => nextColumnSort(current, key))} /><span>관리</span></div>{sortedUsers.map((item) => <div key={item.id} className="grid grid-cols-[1fr_1fr_1.5fr_1fr_96px_132px] items-center gap-2 border-b py-2 text-center text-sm"><b className="min-w-0 break-words">{item.username}</b><input value={item.name} onChange={(event) => update(item.id, { name: event.currentTarget.value })} placeholder="이름" className="min-w-0 w-full rounded border p-2 text-center" /><input value={item.email} onChange={(event) => update(item.id, { email: event.currentTarget.value })} placeholder="이메일" className="min-w-0 w-full rounded border p-2 text-center" /><input aria-label={`${item.username} 사번`} value={item.employee_number} onChange={(event) => update(item.id, { employee_number: event.currentTarget.value })} placeholder="미등록" className="min-w-0 w-full rounded border p-2 text-center" /><label className="flex justify-center"><input type="checkbox" aria-label={`${item.username} 관리자 권한`} disabled={item.username === "brainz"} checked={item.is_admin} onChange={(event) => update(item.id, { is_admin: event.target.checked })} className="h-4 w-4" /></label><span className="flex justify-center gap-2 whitespace-nowrap">{item.username !== "brainz" && <button type="button" onClick={() => void changePassword(item.id)} className="rounded border border-slate-300 px-2 py-1.5 text-xs hover:border-blue-600 hover:bg-blue-600 hover:text-white">{passwords[item.id] ? "PW 변경 대기" : "PW 수정"}</button>}{!["brainz", "brainz_admin"].includes(item.username) && <button type="button" onClick={() => void remove(item.id, item.username)} className="rounded border border-red-200 px-2 py-1.5 text-xs text-red-600 hover:border-red-500 hover:bg-red-500 hover:text-white">삭제</button>}</span></div>)}</div></div>{message && <p role="status" className="mt-3 text-sm text-slate-600">{message}</p>}<div className="mt-5 flex items-center justify-between gap-3 border-t border-slate-200 pt-4"><p className="text-xs text-slate-500">수정 내용은 확인을 눌러야 저장됩니다.</p><div className="flex shrink-0 gap-2"><button type="button" onClick={onClose} className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold">취소</button><button type="button" onClick={() => void save()} className="rounded-lg border border-slate-300 px-5 py-2 text-sm font-semibold">{saving ? "저장 중…" : "확인"}</button></div></div></fieldset></section></div>;
 }
 
-type History = { id: number; table_name: string; action: string; changed_fields: string[]; changed_at: string; after_data: Record<string, unknown> };
+type History = { id: number; table_name: string; action: string; changed_at: string };
 type Company = SiteDeliveries & { can_edit: boolean; dashboard_image?: DashboardImage | null; attachments?: SiteAttachment[]; created_at?: string; updated_at?: string; build_date?: string; notes?: string; special_notes?: string; id: number; created_by: number | null; name: string; status: string; business_code: string; maintenance_code: string; contract_type: string; sales_manager: string; support_staff: string; current_file_date: string | null; build_year: number | null; address: string; remote_support: boolean; systems: { id: number; name: string; os_type: string; database_type: string; ip_address: string | null }[]; hardware_specs: { id: number; target: string; cpu: string; memory: string; disk: string; other_detail?: string }[]; hardware_capacities?: { id: number; directory: string; used_capacity: string; total_capacity: string; available_capacity: string }[]; contacts?: Record<string, unknown>[]; contract_products?: Record<string, unknown>[]; solutions?: Record<string, unknown>[]; integrations?: Record<string, unknown>[]; installation_locations?: Record<string, unknown>[]; change_history?: History[] };
 type Tab = "detail" | "basic" | "solutions" | "hardware" | "files" | "search" | "history";
+
+const seoulDateFormatter = new Intl.DateTimeFormat("en-CA", {
+  timeZone: "Asia/Seoul", year: "numeric", month: "2-digit", day: "2-digit",
+});
 
 function editInitialValues(company: Company): Record<string, string | boolean | null> {
   const text = (value: unknown) => value == null ? "" : String(value);
@@ -107,7 +111,9 @@ function editInitialValues(company: Company): Record<string, string | boolean | 
     systems_json: JSON.stringify(company.systems ?? []),
     name: company.name, build_year: text((company as unknown as Record<string, unknown>).build_date) || (company.build_year ? `${company.build_year}-01-01` : ""), contract_period: company.contract_type, business_code: company.business_code, maintenance_code: company.maintenance_code,
     sales_manager: company.sales_manager, support_staff_primary: company.support_staff.split(/\s*\/\s*/)[0] ?? "", support_staff_secondary: company.support_staff.split(/\s*\/\s*/).slice(1).join(" / "),
-    address: company.address, current_file_date: company.current_file_date, remote_support: company.remote_support,
+    address: company.address,
+    current_file_date: company.can_edit ? seoulDateFormatter.format(new Date()) : company.current_file_date,
+    remote_support: company.remote_support,
     ems_package: text(ems.package_name), ems_version: text(ems.version), dashboard_enabled: Boolean(dashboard.product_name),
     dashboard_package: text(dashboard.package_name), dashboard_version: text(dashboard.version), dashboard_location: text(dashboard.installation_location),
     datamanager_version: text(dashboard.configuration).replace(/^Datamanager:\s*/i, ""),
@@ -157,6 +163,7 @@ export default function DashboardPage() {
   const [showAssignments, setShowAssignments] = useState(false);
   const [fromSiteManagement, setFromSiteManagement] = useState(false);
   const [editing, setEditing] = useState<Company | null>(null);
+  const editFormValues = useMemo(() => editing ? editInitialValues(editing) : undefined, [editing]);
   const [leftOpen, setLeftOpen] = useState(true);
   const [rightOpen, setRightOpen] = useState(true);
   const [historyErrorId, setHistoryErrorId] = useState<number | null>(null);
@@ -230,7 +237,7 @@ export default function DashboardPage() {
     if (!token) return;
     const controller = new AbortController();
     const headers = { Authorization: "Token " + token };
-    const url = API + "/companies/" + historyCompanyId + "/change-history/";
+    const url = API + "/companies/" + historyCompanyId + "/change-history/?summary=1";
     void fetch(url, { headers, signal: controller.signal })
       .then(response => {
         if (!response.ok) throw new Error();
@@ -250,7 +257,7 @@ export default function DashboardPage() {
         if (!controller.signal.aborted) setHistoryErrorId(historyCompanyId);
       });
     return () => controller.abort();
-  }, [historyCompanyId]);
+  }, [historyCompanyId, mainCompany?.updated_at]);
   const filtered = (items: Company[]) => {
     const keyword = query.trim().toLowerCase();
     const matchingContracts = items.filter((company) => contractFilter === null || (company.contract_type ?? "").trim() === contractFilter);
@@ -347,7 +354,7 @@ export default function DashboardPage() {
     const companyId = editing.id;
     const saveCompanyLast = staffChanged || transferTo !== undefined;
     async function saveCompany() {
-      const response = await fetch(`${API}/companies/${companyId}/`, { method: "PATCH", ...siteWriteRequest({ ...payload, ...(transferTo === undefined ? {} : { transfer_to: transferTo }) }, files, headers, dashboardImage, removeDashboardImage) });
+      const response = await fetch(`${API}/companies/${companyId}/?include_history=0`, { method: "PATCH", ...siteWriteRequest({ ...payload, ...(transferTo === undefined ? {} : { transfer_to: transferTo }) }, files, headers, dashboardImage, removeDashboardImage) });
       if (!response.ok) {
         const data = await response.json().catch(() => ({}));
         throw new Error(data.detail ?? data.transfer_to?.[0] ?? "수정하지 못했습니다.");
@@ -411,7 +418,7 @@ export default function DashboardPage() {
       await refreshSiteData();
       return;
     }
-    const detail = await fetch(`${API}/companies/${editing.id}/`, { headers });
+    const detail = await fetch(`${API}/companies/${editing.id}/?include_history=0`, { headers });
     if (!detail.ok) throw new Error("저장한 정보를 다시 불러오지 못했습니다. 다시 시도해주세요.");
     const fullCompany: Company = await detail.json();
     setAllCompanies((current) => current.map((company) => company.id === fullCompany.id ? fullCompany : company));
@@ -425,10 +432,10 @@ export default function DashboardPage() {
     <header className="flex h-16 items-center border-b border-slate-200 bg-white px-6"><div className="flex items-center gap-3"><div className="grid h-9 w-9 place-items-center rounded-xl bg-blue-600 font-bold text-white">C</div><div><p className="text-sm font-bold">COM_MANAGE</p><p className="text-xs text-slate-500">업체·사이트 관리</p></div>{user && <NoticeCenter key={user.id ?? user.username} api={API} isAdmin={user.is_admin} />}</div></header>
     <div className={`workspace-grid min-h-[calc(100vh-64px)] ${!leftOpen ? "workspace-grid--left-collapsed" : ""} ${!rightOpen ? "workspace-grid--right-collapsed" : ""}`}>
       <aside className="max-h-[calc(100vh-64px)] overflow-y-auto border-r border-slate-200 bg-white p-4">{leftOpen ? <><div className="mb-4 flex items-center justify-between"><div className="flex items-center gap-2"><button type="button" onClick={() => setShowPassword(true)} title="내 정보 수정" className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:border-blue-600 hover:bg-blue-600 hover:text-white">{user?.username ?? "접속 ID"}</button><button onClick={logout} aria-label="로그아웃" title="로그아웃" className="grid h-9 w-9 place-items-center rounded-lg border border-slate-300 bg-white text-lg text-slate-600 hover:border-blue-600 hover:bg-blue-600 hover:text-white"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-5 w-5" aria-hidden="true"><path d="M10 17l5-5-5-5" /><path d="M15 12H3" /><path d="M21 3v18" /></svg></button></div><button onClick={() => setLeftOpen(false)} aria-label="사이트 목록 접기" className="rounded-md border px-2 py-1 text-sm text-slate-600 hover:bg-slate-50">‹</button></div><div className="mb-4 flex gap-3"><label className="sr-only">사이트 검색</label><select value={searchScope} onChange={(event) => setSearchScope(event.target.value as SearchScope)} aria-label="검색 분류" className="w-16 shrink-0 rounded-lg border border-slate-300 bg-slate-50 px-2 py-2 text-sm font-medium outline-none focus:border-blue-500"><option value="all">전체</option><option value="name">이름</option><option value="contract">계약구분</option><option value="code">코드</option></select><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={searchScope === "all" ? "전체 항목 검색" : searchScope === "name" ? "사이트명 검색" : searchScope === "contract" ? "계약구분 검색" : "사업·유지보수 코드 검색"} className="min-w-0 flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-blue-500" /></div><div className="mb-4"><label htmlFor="sidebar-contract-filter" className="mb-2 block text-xs font-bold text-slate-600">계약 구분</label><select id="sidebar-contract-filter" value={contractFilter === null ? "all" : `value:${contractFilter}`} onChange={(event) => setContractFilter(event.target.value === "all" ? null : event.target.value.slice(6))} className="w-full rounded-lg border border-slate-300 bg-white p-1 text-sm outline-none focus:border-blue-500"><option value="all" className="px-2 py-1">전체 계약 구분</option>{contractOptions.map((value) => <option key={value} value={`value:${value}`} className="px-2 py-1">{value || "미입력"}</option>)}</select></div>{user?.is_admin && <div className="mb-4 flex rounded-lg border border-slate-200 bg-slate-50 p-1 text-sm"><label className={`flex-1 cursor-pointer rounded-md px-2 py-2 text-center ${siteListMode === "all" ? "bg-white font-semibold text-blue-700 shadow-sm" : "text-slate-500"}`}><input type="radio" className="sr-only" checked={siteListMode === "all"} onChange={() => setSiteListMode("all")} />전체 사이트</label><label className={`flex-1 cursor-pointer rounded-md px-2 py-2 text-center ${siteListMode === "users" ? "bg-white font-semibold text-blue-700 shadow-sm" : "text-slate-500"}`}><input type="radio" className="sr-only" checked={siteListMode === "users"} onChange={() => setSiteListMode("users")} />사용자별 사이트</label></div>}{user?.is_admin ? (siteListMode === "all" ? <SiteSection title="전체 사이트" searching={sidebarSearching} count={filtered(allCompanies).length} sites={filtered(allCompanies)} selectedIds={selectedIds} onToggle={toggleCompany} onAdd={() => setShowAdd(true)} /> : <UserSiteGroups key={`${searchScope}:${query.trim()}:${contractFilter}`} searching={sidebarSearching} groups={userGroups} companies={filtered(allCompanies)} selectedIds={selectedIds} onToggle={toggleCompany} onInfo={id => { setSiteListUserId(id); setActiveTab("detail"); }} />) : <RegularSiteLists key={`${sidebarSearching}:${contractFilter}`} searching={sidebarSearching} mine={siteLists.mine} others={siteLists.others} selectedIds={selectedIds} onToggle={toggleCompany} onAdd={() => setShowAdd(true)} />}<ManagementMenu onSearch={() => { setSiteListUserId(null); setActiveTab("search"); }} isAdmin={Boolean(user?.is_admin)} onManageSites={() => setShowSiteManagement(true)} onUsers={() => setShowUserManagement(true)} /></> : <button onClick={() => setLeftOpen(true)} aria-label="사이트 목록 펼치기" className="grid h-9 w-full place-items-center rounded-md border text-lg text-slate-600 hover:bg-slate-50">›</button>}</aside>
-      <section onDragOver={(event) => event.preventDefault()} onDrop={(event) => { const id = Number(event.dataTransfer.getData("company-id")); if (id && allCompanies.some((company) => company.id === id)) openCompany(id); }} className="center-workspace min-w-0 p-5 lg:p-7"><div className="mb-6 flex flex-wrap items-end justify-between gap-3">{siteListUserId !== null ? <div><p className="text-sm font-medium text-blue-600">사용자별 사이트</p><h1 className="mt-1 text-2xl font-bold">{userGroups.find(group => group.id === siteListUserId)?.name || userGroups.find(group => group.id === siteListUserId)?.username} · 전체 사이트</h1></div> : activeTab === "search" ? <h1 className="text-2xl font-bold">검색</h1> : mainCompany ? <div><p className="text-sm font-medium text-blue-600">사이트 정보</p><div className="mt-1 flex flex-wrap items-center gap-3"><h1 className="text-2xl font-bold">{mainCompany.name}</h1>{(mainCompany.dashboard_image?.id ?? 0) > 0 && (mainCompany.dashboard_image?.size ?? 0) > 0 && <button type="button" onClick={() => setDashboardPreview({ name: mainCompany.name, image: mainCompany.dashboard_image })} className="rounded-lg border border-blue-300 bg-blue-50 px-3 py-1.5 text-sm font-semibold text-blue-700 hover:bg-blue-600 hover:text-white">대시보드</button>}</div><p className="mt-1 text-sm text-slate-500">좌측 사이트를 이 영역으로 끌어 놓아 추가할 수 있습니다.</p></div> : <div />}<div>{siteListUserId !== null && <button type="button" onClick={() => { setSiteListUserId(null); setActiveTab("detail"); }} aria-label="담당자 선택 취소" className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:border-blue-600 hover:bg-blue-600 hover:text-white">선택 취소</button>}{siteListUserId === null && activeTab !== "search" && mainCompany?.current_file_date && <p className="text-xs text-slate-500">등록·수정 날짜 <b className="ml-1 text-slate-700">{mainCompany.current_file_date}</b></p>}{siteListUserId === null && activeTab !== "search" && mainCompany && <button onClick={() => openSiteForm(mainCompany)} className="mt-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition hover:border-blue-600 hover:bg-blue-600 hover:text-white">{mainCompany.can_edit ? "수정" : "정보 확인"}</button>}</div></div>
+      <section onDragOver={(event) => event.preventDefault()} onDrop={(event) => { const id = Number(event.dataTransfer.getData("company-id")); if (id && allCompanies.some((company) => company.id === id)) openCompany(id); }} className="center-workspace min-w-0 p-5 lg:p-7"><div className="mb-6 flex flex-wrap items-end justify-between gap-3">{siteListUserId !== null ? <div><p className="text-sm font-medium text-blue-600">사용자별 사이트</p><h1 className="mt-1 text-2xl font-bold">{userGroups.find(group => group.id === siteListUserId)?.name || userGroups.find(group => group.id === siteListUserId)?.username} · 전체 사이트</h1></div> : activeTab === "search" ? <h1 className="text-2xl font-bold">검색</h1> : mainCompany ? <div><p className="text-sm font-medium text-blue-600">사이트 정보</p><div className="mt-1 flex flex-wrap items-center gap-3"><h1 className="text-2xl font-bold">{mainCompany.name}</h1>{(mainCompany.dashboard_image?.id ?? 0) > 0 && (mainCompany.dashboard_image?.size ?? 0) > 0 && <button type="button" onClick={() => setDashboardPreview({ name: mainCompany.name, image: mainCompany.dashboard_image })} className="rounded-lg border border-blue-300 bg-blue-50 px-3 py-1.5 text-sm font-semibold text-blue-700 hover:bg-blue-600 hover:text-white">대시보드</button>}</div><p className="mt-1 text-sm text-slate-500">좌측 사이트를 이 영역으로 끌어 놓아 추가할 수 있습니다.</p></div> : <div />}<div>{siteListUserId !== null && <button type="button" onClick={() => { setSiteListUserId(null); setActiveTab("detail"); }} aria-label="담당자 선택 취소" className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:border-blue-600 hover:bg-blue-600 hover:text-white">선택 취소</button>}{siteListUserId === null && activeTab !== "search" && mainCompany?.current_file_date && <p className="text-sm text-slate-600">등록·수정 날짜 <b className="ml-1 text-base text-slate-700">{mainCompany.current_file_date}</b></p>}{siteListUserId === null && activeTab !== "search" && mainCompany && <button onClick={() => openSiteForm(mainCompany)} className="mt-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition hover:border-blue-600 hover:bg-blue-600 hover:text-white">{mainCompany.can_edit ? "수정" : "정보 확인"}</button>}</div></div>
         {notice ? <div className="rounded-xl border border-dashed border-slate-300 bg-white p-10 text-center text-slate-500">{notice}</div> : <>{siteListUserId === null && mainCompany && <><div className="mb-5 flex flex-wrap gap-2">{selected.map((company) => <button key={company.id} onClick={() => { setActiveCompanyId(company.id); }} className={`rounded-full px-3 py-1.5 text-[11px] ${company.id === mainCompany.id ? "bg-blue-600 text-white" : "bg-white ring-1 ring-slate-200"}`}>{company.name}<span onClick={(event) => { event.stopPropagation(); toggleCompany(company.id); }} className="ml-2 opacity-70">×</span></button>)}<button type="button" onClick={() => { setSelectedIds([]); setActiveCompanyId(null); setActiveTab("detail"); }} title="열린 사이트 탭 모두 닫기" aria-label="열린 사이트 탭 모두 닫기 clear" className="ml-auto rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 hover:border-blue-600 hover:bg-blue-600 hover:text-white">clear</button></div><nav className="mb-5 flex overflow-x-auto border-b border-slate-200">{([['detail','상세 정보'],['basic','기본 정보'],['solutions','구축 솔루션'],['hardware','HW 정보'],['files','추가정보파일']] as [Tab,string][]).map(([key,label]) => <button key={key} onClick={() => setActiveTab(key)} className={`whitespace-nowrap border-b-2 px-4 py-3 text-sm font-semibold ${activeTab === key ? "border-blue-600 text-blue-600" : "border-transparent text-slate-500"}`}>{label}</button>)}</nav></>}{siteListUserId !== null && user?.is_admin ? <UserSitesTable key={user.id ?? user.username} preferenceKey={`brainz_site_columns_${encodeURIComponent(String(user.id ?? user.username))}`} companies={allCompanies.filter(company => userGroups.find(group => group.id === siteListUserId)?.company_ids.includes(company.id))} onOpen={openSiteForm} onDashboardOpen={setDashboardPreview} /> : activeTab === "search" ? <div className="max-h-[calc(100vh-200px)] overflow-y-auto pr-2"><SearchTabs companies={allCompanies} onOpen={openSiteForm} onDashboardOpen={setDashboardPreview} /></div> : mainCompany ? <Content tab={activeTab} company={mainCompany} historyStatus={historyStatus} canManageFiles={mainCompany.can_edit} onDeleteFile={deleteSiteFile} onDashboardOpen={setDashboardPreview} /> : <div className="rounded-xl border border-dashed border-slate-300 bg-white p-14 text-center"><p className="text-lg font-semibold">표시할 사이트가 없습니다.</p><p className="mt-2 text-sm text-slate-500">좌측 목록에서 + 버튼을 눌러 상세 정보를 열어보세요.</p><p className="mt-2 text-sm text-slate-500">좌측 사이트를 이 영역으로 끌어 놓아 추가하거나, 왼쪽 검색 메뉴로 사이트 정보를 검색할 수 있습니다.</p></div>}</>}</section>
       <aside className="border-l border-slate-200 bg-white p-4">{rightOpen ? <><div className="mb-4"><button onClick={() => setRightOpen(false)} aria-label="변경 이력 접기" className="rounded-md border px-2 py-1 text-sm text-slate-600 hover:bg-slate-50">›</button></div><HistoryPanel company={mainCompany} historyStatus={historyStatus} /></> : <button onClick={() => setRightOpen(true)} aria-label="변경 이력 펼치기" className="grid h-9 w-full place-items-center rounded-md border text-lg text-slate-600 hover:bg-slate-50">‹</button>}</aside>
-    </div>{showAdd && <AddSiteDialog onClose={() => setShowAdd(false)} onCreate={createCompany} onPreview={previewImport} onImport={commitImport} onBackToManagement={fromSiteManagement ? () => { setShowAdd(false); setEditing(null); setFromSiteManagement(false); setShowSiteManagement(true); } : undefined} />}{editing && <AddSiteDialog onClose={() => setEditing(null)} onCreate={updateCompany} onPreview={previewImport} onImport={commitImport} onBackToManagement={fromSiteManagement ? () => { setShowAdd(false); setEditing(null); setFromSiteManagement(false); setShowSiteManagement(true); } : undefined} editMode readOnly={!editing.can_edit} transferUsers={userGroups.filter(group => group.id !== user?.id && group.username !== user?.username && !group.company_ids.includes(editing.id)).sort(compareSiteUsers)} existingFiles={editing.attachments} dashboardImage={editing.dashboard_image} initialValues={editInitialValues(editing)} />}
+    </div>{showAdd && <AddSiteDialog onClose={() => setShowAdd(false)} onCreate={createCompany} onPreview={previewImport} onImport={commitImport} onBackToManagement={fromSiteManagement ? () => { setShowAdd(false); setEditing(null); setFromSiteManagement(false); setShowSiteManagement(true); } : undefined} />}{editing && <AddSiteDialog onClose={() => setEditing(null)} onCreate={updateCompany} onPreview={previewImport} onImport={commitImport} onBackToManagement={fromSiteManagement ? () => { setShowAdd(false); setEditing(null); setFromSiteManagement(false); setShowSiteManagement(true); } : undefined} editMode readOnly={!editing.can_edit} transferUsers={userGroups.filter(group => group.id !== user?.id && group.username !== user?.username && !group.company_ids.includes(editing.id)).sort(compareSiteUsers)} existingFiles={editing.attachments} dashboardImage={editing.dashboard_image} initialValues={editFormValues} />}
     {showSiteManagement && <SiteManagementModal companies={user?.is_admin ? allCompanies : allCompanies.filter(company => company.can_edit || myCompanies.some(item => item.id === company.id))} onClose={() => setShowSiteManagement(false)} onAdd={() => { setShowSiteManagement(false); setFromSiteManagement(true); setShowAdd(true); }} onEdit={(company) => { setShowSiteManagement(false); setFromSiteManagement(true); openSiteForm(company); }} onDelete={deleteCompany} canDelete={company => company.can_edit && Boolean(user?.is_admin || myCompanies.some(item => item.id === company.id))} isAdmin={Boolean(user?.is_admin)} onAssignments={() => { setShowSiteManagement(false); setShowAssignments(true); }} />}
     {dashboardPreview && <DashboardImageModal target={dashboardPreview} onClose={() => setDashboardPreview(null)} />}
     {showPassword && <PasswordModal onClose={() => setShowPassword(false)} />}
@@ -700,31 +707,27 @@ function RecordSection({ title, rows }: { title: string; rows?: Record<string, u
 }
 function InfoGrid({ company }: { company: Company }) {
   const deliveries = checkedDeliveries(company).join(" / ");
-  const data = [
-    ["계약 구분", company.contract_type],
-    ["사업 코드", company.business_code],
-    ["유지보수 코드", company.maintenance_code],
-    ["구축 날짜", company.build_date || company.build_year?.toString()],
-    ["등록·수정 날짜", company.current_file_date],
-    ["참고 사항", company.notes],
-    ["특이사항 및 전달사항", company.special_notes],
-    ["담당 영업", company.sales_manager],
-    ["지원 인력", company.support_staff],
-    ["위치", company.address],
-    ["원격 지원", company.remote_support ? "가능" : "미사용"],
+  const fields = [
+    { label: "계약 구분", value: company.contract_type },
+    { label: "사업 코드", value: company.business_code },
+    { label: "유지보수 코드", value: company.maintenance_code },
+    { label: "담당 영업", value: company.sales_manager },
+    { label: "구축 날짜", value: company.build_date || company.build_year?.toString() },
+    { label: "지원 인력", value: company.support_staff },
+    { label: "위치", value: company.address, layout: "@xs:col-span-2" },
+    { label: "원격 지원", value: company.remote_support ? "가능" : "미사용" },
+    ...(deliveries ? [{ label: "납품 항목", value: deliveries, layout: "col-span-full" }] : []),
+    { label: "참고 사항", value: company.notes, layout: "col-span-full whitespace-pre-wrap" },
+    { label: "특이사항 및 전달사항", value: company.special_notes, layout: "col-span-full whitespace-pre-wrap" },
   ];
 
-  return <div className="rounded-xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
+  return <div className="@container rounded-xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
     <h3 className="sticky top-0 z-10 border-b border-slate-100 bg-white py-3 font-bold">기본 정보</h3>
-    <dl className="mt-4 grid gap-x-6 gap-y-4 sm:grid-cols-2">
-      {data.map(([label, value]) => <div key={label} className="border-b border-slate-100 pb-3">
+    <dl className="mt-4 grid grid-cols-1 gap-x-6 gap-y-4 @xs:grid-cols-3">
+      {fields.map(({ label, value, layout = "" }) => <div key={label} className={`min-w-0 border-b border-slate-100 pb-3 ${layout}`}>
         <dt className="text-xs text-slate-500">{label}</dt>
-        <dd className="mt-1 text-sm font-medium">{value || "미입력"}</dd>
+        <dd className="mt-1 text-sm font-medium wrap-anywhere">{value || "미입력"}</dd>
       </div>)}
-      {deliveries && <div className="border-b border-slate-100 pb-3">
-        <dt className="text-xs text-slate-500">납품 항목</dt>
-        <dd className="mt-1 text-sm font-medium">{deliveries}</dd>
-      </div>}
     </dl>
   </div>;
 }
@@ -865,25 +868,65 @@ function SolutionResultList({ companies, conditions, onOpen }: { companies: Comp
   return <div className="mt-3 space-y-3"><div className="flex flex-wrap items-center gap-2 text-xs font-semibold text-slate-500"><span>정렬</span>{([["site", "사이트명"], ["solution", "솔루션 사용 개수 합계"], ["hardware", "H/W 사양"], ["used_capacity", "사용량 합계"], ["total_capacity", "전체 용량 합계"], ["available_capacity", "가용량 합계"]] as [SolutionSortKey, string][]).map(([key, title]) => <ColumnSortButton key={key} label={title} column={key} sort={sort} onSort={key => setSort(current => nextColumnSort(current, key))} />)}</div>{companies.length ? sortedCompanies.map((company) => <article key={company.id} className="rounded-xl border border-slate-200 p-4"><button type="button" onClick={() => onOpen(company)} className="font-bold text-blue-700 hover:underline">{company.name}</button><div className="mt-3 grid gap-3 lg:grid-cols-3"><div><p className="text-xs font-bold text-slate-500">일치한 구축 솔루션</p>{conditions.map((condition) => { const item = (company.solutions ?? []).find((solution) => label(solution) === condition.solution); return <p key={condition.solution} className="mt-1 text-sm">{condition.solution}: <b>{String(item?.used_quantity ?? 0)}개</b></p>; })}</div><div><p className="text-xs font-bold text-slate-500">H/W 사양</p>{company.hardware_specs.length ? company.hardware_specs.map((spec) => <p key={spec.id} className="mt-1 text-sm">{spec.target}: CPU {spec.cpu || "-"} / Memory {spec.memory || "-"}G / DISK {spec.disk || "-"}G</p>) : <p className="mt-1 text-sm text-slate-400">등록 없음</p>}</div><div><p className="text-xs font-bold text-slate-500">현재 H/W 용량</p>{company.hardware_capacities?.length ? company.hardware_capacities.map((capacity) => <p key={capacity.id} className="mt-1 text-sm">{capacity.directory}: 사용 {capacity.used_capacity || "-"} / 전체 {capacity.total_capacity || "-"} / 가용 {capacity.available_capacity || "-"}</p>) : <p className="mt-1 text-sm text-slate-400">등록 없음</p>}</div></div></article>) : <p className="mt-3 rounded-lg border border-dashed p-8 text-center text-sm text-slate-400">조건에 맞는 사이트가 없습니다.</p>}</div>;
 }
 
-const HISTORY_TABLE_LABELS: Record<string, string> = { excel_upload: "엑셀 업로드", com_company: "사이트 정보", com_contact: "담당자", com_product: "계약·제품", com_lic: "구축 솔루션", com_dev: "연동 개발", com_system: "시스템 구성", com_install: "설치 위치 정보", com_spec: "H/W 구성 정보", com_hw_capacity: "H/W 용량" };
-const historyTableLabel = (tableName: string) => HISTORY_TABLE_LABELS[tableName] ?? "사이트 정보";
-const historyActionLabel = (action: string) => ({ create: "추가", update: "수정", delete: "삭제" }[action] ?? action);
-const historyFieldsLabel = (fields: string[]) => fields.map((field) => HISTORY_FIELD_LABELS[field] ?? field).join(", ") || "변경 항목 없음";
-function History({ company, historyStatus }: { company: Company; historyStatus: string }) { return <div className="rounded-xl bg-white p-5 shadow-sm ring-1 ring-slate-200"><h3 className="font-bold">변경 이력</h3><div className="mt-4 space-y-3">{company.change_history?.length ? company.change_history.map((item) => <div key={item.id} className="border-l-2 border-blue-500 pl-4"><p className="text-sm font-semibold">{company.name} · {historyTableLabel(item.table_name)} {historyActionLabel(item.action)}</p><p title={`변경 항목: ${historyFieldsLabel(item.changed_fields)}`} className="mt-1 line-clamp-2 text-sm text-slate-600">변경 항목: {historyFieldsLabel(item.changed_fields)}</p><time className="text-xs text-slate-400">{new Date(item.changed_at).toLocaleString('ko-KR')}</time></div>) : <p className="text-sm text-slate-500">{historyStatus || "기록된 변경 이력이 없습니다."}</p>}</div></div> }
+const historyActionLabel = (action: string) => ({ create: "등록", update: "수정", delete: "삭제" }[action] ?? action);
+
+function siteHistoryItems(company: Company) {
+  return (company.change_history ?? []).filter(item => item.table_name === "com_company");
+}
+
+function siteHistoryTitle(company: Company, item: History) {
+  return `${company.name} · 사이트 ${historyActionLabel(item.action)}`;
+}
+
+function History({ company, historyStatus }: { company: Company; historyStatus: string }) {
+  const items = siteHistoryItems(company);
+  return <div className="rounded-xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
+    <h3 className="font-bold">변경 이력</h3>
+    <div className="mt-4 space-y-3">
+      {items.length ? items.map(item => <div key={item.id} className="border-l-2 border-blue-500 pl-4">
+        <p className="text-sm font-semibold">{siteHistoryTitle(company, item)}</p>
+        <time className="text-xs text-slate-400">{new Date(item.changed_at).toLocaleString("ko-KR")}</time>
+      </div>) : <p className="text-sm text-slate-500">{historyStatus || "기록된 변경 이력이 없습니다."}</p>}
+    </div>
+  </div>;
+}
+
 function HistoryPanel({ company, historyStatus }: { company?: Company; historyStatus: string }) {
-  const localDate = (value: Date) => new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Seoul", year: "numeric", month: "2-digit", day: "2-digit" }).format(value);
-  const day = (offset: number) => localDate(new Date(Date.now() + offset * 86400000));
+  const day = (offset: number) => seoulDateFormatter.format(new Date(Date.now() + offset * 86400000));
   const [startDate, setStartDate] = useState(() => day(-6));
   const [endDate, setEndDate] = useState(() => day(0));
   const [query, setQuery] = useState("");
   const activeDays = endDate === day(0) ? startDate === day(-6) ? 7 : startDate === day(-29) ? 30 : null : null;
-  const items = (company?.change_history ?? []).filter((item) => {
-    const date = localDate(new Date(item.changed_at));
-    const text = `${historyTableLabel(item.table_name)} ${historyActionLabel(item.action)} ${historyFieldsLabel(item.changed_fields)}`.toLowerCase();
-    return date >= startDate && date <= endDate && text.includes(query.toLowerCase());
-  });
-  return <section className="max-h-[calc(100vh-120px)] overflow-y-auto pr-1"><div className="sticky top-0 z-20 mb-4 border-b border-slate-200 bg-white pb-3 pt-1"><div className="flex items-center justify-between gap-2"><p className="text-sm font-bold">변경 이력</p><div className="flex gap-1">{([7, 30] as const).map(days => <button key={days} type="button" onClick={() => { setStartDate(day(-(days - 1))); setEndDate(day(0)); }} aria-pressed={activeDays === days} title={`오늘 포함 최근 ${days}일 조회`} className={`rounded-md border px-2 py-1 text-[11px] font-semibold transition hover:border-blue-600 hover:bg-blue-600 hover:text-white ${activeDays === days ? "border-blue-300 bg-blue-50 text-blue-700" : "border-slate-200 bg-white text-slate-600"}`}>{days}D</button>)}</div></div><p className="mt-1 text-xs text-slate-500">{activeDays ? `최근 ${activeDays}일` : "지정 기간"} · {company ? company.name : "사이트를 선택하세요"}</p></div><div className="mb-4 grid grid-cols-2 gap-2"><SegmentedDatePicker label="시작일" value={startDate} onChange={setStartDate} /><SegmentedDatePicker label="종료일" value={endDate} onChange={setEndDate} /></div><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="항목 또는 변경 유형 검색" className="mb-4 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />{company ? <div className="space-y-3">{items.length ? items.map((item) => <article key={item.id} className="rounded-lg border border-slate-200 p-3"><p className="text-sm font-semibold">{company.name} · {historyTableLabel(item.table_name)} {historyActionLabel(item.action)}</p><p title={`변경 항목: ${historyFieldsLabel(item.changed_fields)}`} className="mt-1 line-clamp-2 text-xs text-slate-600">변경 항목: {historyFieldsLabel(item.changed_fields)}</p>{item.table_name === "excel_upload" && <details className="mt-2 text-xs text-slate-600"><summary className="cursor-pointer text-blue-700">업로드 결과 보기</summary><p className="mt-2">빈값 항목: {Array.isArray(item.after_data.missing) ? (item.after_data.missing as { label: string }[]).map((value) => value.label).join(", ") || "없음" : "없음"}</p></details>}<time className="mt-2 block text-xs text-slate-400">{new Date(item.changed_at).toLocaleString("ko-KR")}</time></article>) : <p className="rounded-lg bg-slate-50 p-4 text-center text-xs text-slate-500">{historyStatus || "선택한 기간에 해당하는 변경 이력이 없습니다."}</p>}</div> : <p className="rounded-lg bg-slate-50 p-4 text-center text-xs text-slate-500">왼쪽에서 사이트를 추가하면 이력이 표시됩니다.</p>}</section>;
+  const search = query.trim().toLowerCase();
+  const items = company ? siteHistoryItems(company).filter(item => {
+    const date = seoulDateFormatter.format(new Date(item.changed_at));
+    return date >= startDate && date <= endDate && siteHistoryTitle(company, item).toLowerCase().includes(search);
+  }) : [];
+
+  return <section className="max-h-[calc(100vh-120px)] overflow-y-auto pr-1">
+    <div className="sticky top-0 z-20 mb-4 border-b border-slate-200 bg-white pb-3 pt-1">
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-sm font-bold">변경 이력</p>
+        <div className="flex gap-1">
+          {([7, 30] as const).map(days => <button key={days} type="button" onClick={() => { setStartDate(day(-(days - 1))); setEndDate(day(0)); }} aria-pressed={activeDays === days} title={`오늘 포함 최근 ${days}일 조회`} className={`rounded-md border px-2 py-1 text-[11px] font-semibold transition hover:border-blue-500 hover:bg-blue-600 hover:text-white ${activeDays === days ? "border-blue-300 bg-blue-50 text-blue-700" : "border-slate-200 bg-white text-slate-600"}`}>{days}D</button>)}
+        </div>
+      </div>
+      <p className="mt-1 text-xs text-slate-500">{activeDays ? `최근 ${activeDays}일` : "지정 기간"} · {company ? company.name : "사이트를 선택하세요"}</p>
+    </div>
+    <div className="mb-4 grid grid-cols-2 gap-2">
+      <SegmentedDatePicker label="시작일" value={startDate} onChange={setStartDate} />
+      <SegmentedDatePicker label="종료일" value={endDate} onChange={setEndDate} />
+    </div>
+    <input value={query} onChange={event => setQuery(event.target.value)} placeholder="사이트명 또는 변경 유형 검색" className="mb-4 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+    {company ? <div className="space-y-3">
+      {items.length ? items.map(item => <article key={item.id} className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
+        <p className="text-sm font-semibold">{siteHistoryTitle(company, item)}</p>
+        <time className="text-xs text-slate-400">{new Date(item.changed_at).toLocaleString("ko-KR")}</time>
+      </article>) : <p className="text-sm text-slate-500">{historyStatus || "선택한 기간에 해당하는 변경 이력이 없습니다."}</p>}
+    </div> : <p className="text-sm text-slate-500">왼쪽에서 사이트를 추가하면 이력이 표시됩니다.</p>}
+  </section>;
 }
+
 const siteColumns = [
   ["name", "고객사명"], ["maintenance_code", "유지보수 코드"], ["ems_package", "EMS 패키지"], ["current_file_date", "등록·수정일자"],
   ["dashboard_enabled", "대시보드"],

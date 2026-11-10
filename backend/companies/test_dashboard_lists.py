@@ -39,6 +39,31 @@ class DashboardListTests(TestCase):
         response = self.client.get("/api/companies/dashboard/")
         self.assertEqual(set(response.data["mine_ids"]), {mine.pk, other.pk})
 
+    def test_site_history_summary_omits_related_changes_and_snapshots(self):
+        site = Company.objects.create(name="등록일 수정 사이트")
+        product = ContractProduct.objects.create(company=site, product_name="EMS")
+        self.client.force_authenticate(self.admin)
+
+        response = self.client.patch(
+            f"/api/contract-products/{product.pk}/", {"configuration": "기존 구성"}, format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+
+        site_url = f"/api/companies/{site.pk}/"
+        response = self.client.patch(f"{site_url}?include_history=0", {"current_file_date": "2026-11-10"}, format="json")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["current_file_date"], "2026-11-10")
+        self.assertNotIn("change_history", response.data)
+        self.assertNotIn("change_history", self.client.get(f"{site_url}?include_history=0").data)
+
+        history_url = f"{site_url}change-history/"
+        summary = self.client.get(f"{history_url}?summary=1")
+        self.assertEqual(summary.status_code, 200)
+        self.assertEqual([entry["action"] for entry in summary.data], ["update", "create"])
+        self.assertEqual({entry["table_name"] for entry in summary.data}, {"com_company"})
+        self.assertEqual(set(summary.data[0]), {"id", "table_name", "action", "changed_at"})
+        self.assertTrue(any(entry["table_name"] == "com_product" for entry in self.client.get(history_url).data))
+
     def test_user_lists_read_assignments_and_profiles_in_bulk(self):
         site = Company.objects.create(name="사용자 목록 테스트")
         CompanyAssignment.objects.create(company=site, user=self.member)
