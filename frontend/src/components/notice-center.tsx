@@ -24,7 +24,7 @@ export function NoticeCenter({ api, isAdmin }: { api: string; isAdmin: boolean }
   const dialog = useRef<HTMLDialogElement>(null);
   const manuallyOpened = useRef(false);
   const readIds = useRef(new Set<number>());
-  const [view, setView] = useState<"list" | "detail" | "create" | null>(null);
+  const [view, setView] = useState<"list" | "detail" | "create" | "edit" | null>(null);
   const [current, setCurrent] = useState<Notice | null>(null);
   const [notices, setNotices] = useState<Notice[]>([]);
   const [loading, setLoading] = useState(false);
@@ -32,6 +32,7 @@ export function NoticeCenter({ api, isAdmin }: { api: string; isAdmin: boolean }
   const [saving, setSaving] = useState(false);
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
   const [error, setError] = useState("");
+  const editingNotice = view === "edit" ? current : null;
 
   useEffect(() => {
     const controller = new AbortController();
@@ -52,7 +53,7 @@ export function NoticeCenter({ api, isAdmin }: { api: string; isAdmin: boolean }
   }, [view]);
 
   useEffect(() => {
-    if (view !== "detail" || !current || current.is_read || readIds.current.has(current.id)) return;
+    if ((view !== "detail" && view !== "edit") || !current || current.is_read || readIds.current.has(current.id)) return;
     const id = current.id;
     fetch(api + "/notices/" + id + "/read/", {
       method: "POST",
@@ -96,9 +97,9 @@ export function NoticeCenter({ api, isAdmin }: { api: string; isAdmin: boolean }
     }
   }
 
-  async function createNotice(event: FormEvent<HTMLFormElement>) {
+  async function saveNotice(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (saving) return;
+    if (!isAdmin || saving) return;
     const form = new FormData(event.currentTarget);
     const title = String(form.get("title") ?? "").trim();
     const body = String(form.get("body") ?? "").trim();
@@ -109,15 +110,15 @@ export function NoticeCenter({ api, isAdmin }: { api: string; isAdmin: boolean }
     setSaving(true);
     setError("");
     try {
-      const response = await fetch(api + "/notices/", {
-        method: "POST",
+      const response = await fetch(api + "/notices/" + (editingNotice ? editingNotice.id + "/" : ""), {
+        method: editingNotice ? "PATCH" : "POST",
         headers: { ...noticeHeaders(), "Content-Type": "application/json" },
         body: JSON.stringify({ title, body }),
       });
       if (!response.ok) throw new Error();
       await openList();
     } catch {
-      setError("공지사항을 등록하지 못했습니다.");
+      setError(editingNotice ? "공지사항을 수정하지 못했습니다." : "공지사항을 등록하지 못했습니다.");
     } finally {
       setSaving(false);
     }
@@ -162,17 +163,17 @@ export function NoticeCenter({ api, isAdmin }: { api: string; isAdmin: boolean }
           <button type="button" disabled={saving} onClick={() => void openList()} className="rounded-lg border border-blue-200 px-3 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-50">리스트 보기</button>
         </div>
       </>}
-      {view === "create" && <form onSubmit={createNotice} className="mt-4 space-y-3">
-        <h3 className="font-semibold">공지 등록</h3>
+      {isAdmin && (view === "create" || editingNotice) && <form onSubmit={saveNotice} className="mt-4 space-y-3">
+        <h3 className="font-semibold">{editingNotice ? "공지 수정" : "공지 등록"}</h3>
         <label className="block text-sm font-semibold">제목
-          <input name="title" required maxLength={200} className="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 font-normal" />
+          <input name="title" defaultValue={editingNotice?.title ?? ""} required maxLength={200} className="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 font-normal" />
         </label>
         <label className="block text-sm font-semibold">내용
-          <textarea name="body" required rows={5} className="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 font-normal" />
+          <textarea name="body" defaultValue={editingNotice?.body ?? ""} required rows={5} className="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 font-normal" />
         </label>
         <div className="flex justify-end gap-2">
           <button type="button" disabled={saving} onClick={() => void openList()} className="rounded-lg border border-slate-300 px-3 py-2 text-sm">취소</button>
-          <button type="submit" disabled={saving} className="rounded-lg bg-blue-700 px-3 py-2 text-sm font-semibold text-white disabled:opacity-50">등록</button>
+          <button type="submit" disabled={saving} className="rounded-lg bg-blue-700 px-3 py-2 text-sm font-semibold text-white disabled:opacity-50">{editingNotice ? "저장" : "등록"}</button>
         </div>
       </form>}
       {view === "list" && <>
@@ -188,7 +189,7 @@ export function NoticeCenter({ api, isAdmin }: { api: string; isAdmin: boolean }
           : <ul className="mt-2 divide-y divide-slate-200">
             {notices.map(notice => <li key={notice.id}>
               <div className="flex items-center gap-2">
-                <button type="button" disabled={readingAll || saving} onClick={() => { setError(""); setCurrent(notice); setView("detail"); }} className="min-w-0 flex-1 rounded px-2 py-3 text-left hover:bg-slate-50">
+                <button type="button" disabled={readingAll || saving} onClick={() => { setError(""); setCurrent(notice); setView(isAdmin ? "edit" : "detail"); }} className="min-w-0 flex-1 rounded px-2 py-3 text-left hover:bg-slate-50">
                   <span className="flex items-start justify-between gap-2">
                     <span className="min-w-0 break-words text-sm font-semibold">{notice.title}</span>
                     <span className={'shrink-0 rounded px-1.5 text-xs font-semibold ' + (notice.is_read ? 'bg-slate-100 text-slate-600' : 'bg-blue-50 text-blue-700')}>

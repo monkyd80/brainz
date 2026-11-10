@@ -1,3 +1,4 @@
+from django.db import transaction
 from django.db.models import Exists, OuterRef
 from django.shortcuts import get_object_or_404
 from rest_framework import mixins, serializers, status, viewsets
@@ -16,19 +17,26 @@ class NoticeSerializer(serializers.ModelSerializer):
         fields = ("id", "title", "body", "created_at", "is_read")
 
 
-class NoticeViewSet(mixins.CreateModelMixin, mixins.DestroyModelMixin, viewsets.GenericViewSet):
+class NoticeViewSet(mixins.CreateModelMixin, mixins.UpdateModelMixin, mixins.DestroyModelMixin, viewsets.GenericViewSet):
     queryset = Notice.objects.all()
     serializer_class = NoticeSerializer
     lookup_value_regex = r"\d+"
 
     def get_permissions(self):
-        if self.action in ("create", "destroy"):
+        if self.action in ("create", "update", "partial_update", "destroy"):
             return [IsAdminUser()]
         return super().get_permissions()
 
     def get_queryset(self):
         reads = NoticeRead.objects.filter(user=self.request.user, notice_id=OuterRef("pk"))
-        return super().get_queryset().annotate(is_read=Exists(reads))
+        queryset = super().get_queryset().annotate(is_read=Exists(reads))
+        if self.action in ("update", "partial_update"):
+            return queryset.select_for_update()
+        return queryset
+
+    @transaction.atomic
+    def update(self, request, *args, **kwargs):
+        return super().update(request, *args, **kwargs)
 
     def list(self, request):
         notices = self.get_queryset()

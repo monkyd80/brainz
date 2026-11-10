@@ -79,6 +79,32 @@ class SiteTransferNoticeTests(TestCase):
         self.assertFalse(NoticeRead.objects.filter(notice_id=notice_id).exists())
         self.assertEqual(self.client.get("/api/notices/").data, [])
 
+    def test_only_admin_can_edit_a_notice_and_read_status_is_preserved(self):
+        admin = get_user_model().objects.create_user(username="notice-editor", is_staff=True)
+        notice = Notice.objects.create(title="점검 공지", body="변경 전 내용")
+        created_at = notice.created_at
+        url = f"/api/notices/{notice.pk}/"
+        payload = {"title": "수정된 점검 공지", "body": "변경 후 내용"}
+
+        self.client.force_authenticate(self.owner)
+        self.assertEqual(self.client.post(url + "read/").status_code, 204)
+        self.assertEqual(self.client.patch(url, payload, format="json").status_code, 403)
+        self.assertEqual(self.client.put(url, payload, format="json").status_code, 403)
+
+        self.client.force_authenticate(admin)
+        self.assertEqual(self.client.patch(url, {"body": " "}, format="json").status_code, 400)
+        response = self.client.patch(url, payload, format="json")
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data["id"], notice.pk)
+        self.assertEqual(response.data["title"], payload["title"])
+        self.assertEqual(response.data["body"], payload["body"])
+        self.assertEqual(Notice.objects.count(), 1)
+        notice.refresh_from_db()
+        self.assertEqual(notice.created_at, created_at)
+
+        self.client.force_authenticate(self.owner)
+        self.assertTrue(self.client.get("/api/notices/").data[0]["is_read"])
+
     def test_reads_are_per_account_and_read_all_does_not_hide_future_notices(self):
         first = Notice.objects.create(title="첫 공지", body="내용")
         second = Notice.objects.create(title="최근 공지", body="내용")
