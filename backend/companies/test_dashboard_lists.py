@@ -1,8 +1,12 @@
+from datetime import datetime, timedelta
+from uuid import uuid4
+
 from django.contrib.auth import get_user_model
 from django.test import TestCase
+from django.utils import timezone
 from rest_framework.test import APIClient
 
-from .models import Company, CompanyAssignment, ContractProduct, UserProfile
+from .models import Company, CompanyAssignment, CompanyChangeHistory, Contact, ContractProduct, System, UserProfile
 
 
 class DashboardListTests(TestCase):
@@ -82,3 +86,73 @@ class DashboardListTests(TestCase):
         self.assertEqual(response.status_code, 200)
         group = next(group for group in response.data if group["id"] == self.member.pk)
         self.assertEqual(group["company_ids"], [site.pk])
+
+    def test_history_summary_groups_actual_changes_across_assigned_sites(self):
+        first = Company.objects.create(name="담당 사이트 1")
+        second = Company.objects.create(name="담당 사이트 2")
+        other = Company.objects.create(name="미할당 사이트")
+        for site in (first, second):
+            CompanyAssignment.objects.create(company=site, user=self.member)
+        contact = Contact.objects.create(company=first, name="담당자")
+        system = System.objects.create(company=first, name="기존 시스템")
+        self.client.force_authenticate(self.member)
+        batch = uuid4().hex
+
+        response = self.client.patch(f"/api/companies/{first.pk}/?include_history=0&edit_batch={batch}", {
+            "name": first.name, "contract_type": first.contract_type,
+        }, format="json")
+        self.assertEqual(response.status_code, 200, response.data)
+        response = self.client.put(f"/api/companies/{first.pk}/system-rows/?edit_batch={batch}", {
+            "systems": [{"id": system.pk, "name": system.name, "ip_address": "", "web_port": ""}],
+        }, format="json")
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertFalse(first.change_history.filter(edit_batch=batch).exists())
+
+        for category in ("sms", "nms"):
+            response = self.client.post(f"/api/solutions/?edit_batch={batch}", {
+                "company": first.pk, "category": category, "used_quantity": 0,
+            }, format="json")
+            self.assertEqual(response.status_code, 201, response.data)
+        response = self.client.patch(f"/api/contacts/{contact.pk}/?edit_batch={batch}", {
+            "name": contact.name, "phone": "02-1234-5678",
+        }, format="json")
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(first.change_history.get(edit_batch=batch, table_name="com_contact").changed_fields, ["phone"])
+        response = self.client.patch(f"/api/companies/{second.pk}/?include_history=0&edit_batch={uuid4().hex}", {
+            "address": "새 위치", "remote_support": True,
+        }, format="json")
+        self.assertEqual(response.status_code, 200, response.data)
+        CompanyChangeHistory.objects.create(
+            company=first, company_name=first.name, table_name="com_company", record_id=first.pk,
+            action="update", changed_fields=["updated_at"],
+        )
+        CompanyChangeHistory.objects.create(
+            company=first, company_name=first.name, table_name="com_install", record_id=first.pk,
+            action="update", changed_fields=["path"], before_data={"path": " /data "}, after_data={"path": "/data"},
+        )
+
+        today = timezone.localdate()
+        url = f"/api/history/summary/?start={today - timedelta(days=1)}&end={today + timedelta(days=1)}"
+        result = self.client.get(url)
+        self.assertEqual(result.status_code, 200, result.data)
+        self.assertEqual({row["company_name"] for row in result.data}, {first.name, second.name})
+        updates = [(row["company_name"], row["category"]) for row in result.data if row["action"] == "update"]
+        self.assertCountEqual(updates, [(first.name, "구축 솔루션"), (first.name, "담당자"), (second.name, "위치")])
+        self.assertNotIn("before_data", result.data[0])
+        self.client.force_authenticate(self.admin)
+        self.assertIn(other.name, {row["company_name"] for row in self.client.get(url).data})
+
+    def test_history_summary_uses_seoul_calendar_days(self):
+        site = Company.objects.create(name="시간대 확인 사이트")
+        CompanyAssignment.objects.create(company=site, user=self.member)
+        site.change_history.update(changed_at=datetime.fromisoformat("2026-11-09T23:59:59+09:00"))
+        for timestamp in ("2026-11-10T00:00:00+09:00", "2026-11-11T00:00:00+09:00"):
+            entry = CompanyChangeHistory.objects.create(
+                company=site, company_name=site.name, table_name="com_company", record_id=site.pk,
+                action="update", changed_fields=["notes"],
+            )
+            CompanyChangeHistory.objects.filter(pk=entry.pk).update(changed_at=datetime.fromisoformat(timestamp))
+        self.client.force_authenticate(self.member)
+        response = self.client.get("/api/history/summary/?start=2026-11-10&end=2026-11-10")
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual([row["category"] for row in response.data], ["참고 사항"])

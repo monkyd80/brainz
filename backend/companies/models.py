@@ -245,6 +245,7 @@ class CompanyChangeHistory(models.Model):
     before_data = models.JSONField("변경 전 데이터", default=dict, encoder=DjangoJSONEncoder)
     after_data = models.JSONField("변경 후 데이터", default=dict, encoder=DjangoJSONEncoder)
     changed_fields = models.JSONField("변경 컬럼", default=list, encoder=DjangoJSONEncoder)
+    edit_batch = models.UUIDField(null=True, editable=False)
     changed_at = models.DateTimeField("변경 일시", auto_now_add=True, db_index=True)
 
     class Meta:

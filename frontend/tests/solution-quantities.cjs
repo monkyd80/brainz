@@ -2,6 +2,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
+const { webcrypto } = require('node:crypto');
 const ts = require('typescript');
 const React = require('react');
 const { renderToStaticMarkup } = require('react-dom/server');
@@ -29,7 +30,7 @@ test('new sites and edits save detail counts even when main counts are blank', a
       for (const [field, value] of Object.entries(values)) form.set(`license_${category}_${field}`, String(value));
     }
     const calls = [];
-    const context = { ...library, editing: { id: 1, solutions: [], hardware_specs: [] }, API: '/api', FormData: function () { return form; }, localStorage: { getItem: () => 'test' }, readSystemRows: () => [], setAllCompanies() {}, setMyCompanies() {}, setEditing() {}, openCompany() {}, refreshSiteData: async () => {}, fetch: async (url, options) => { calls.push({ url, body: options.body && JSON.parse(options.body) }); return { ok: true, json: async () => ({ id: 1 }) }; } };
+    const context = { ...library, editing: { id: 1, solutions: [], hardware_specs: [] }, API: '/api', crypto: webcrypto, FormData: function () { return form; }, localStorage: { getItem: () => 'test' }, readSystemRows: () => [], setAllCompanies() {}, setMyCompanies() {}, setEditing() {}, openCompany() {}, refreshSiteData: async () => {}, fetch: async (url, options) => { calls.push({ url: new URL(url, 'http://localhost').pathname, body: options.body && JSON.parse(options.body) }); return { ok: true, json: async () => ({ id: 1 }) }; } };
     const code = source.slice(source.indexOf(`  async function ${name}(`), source.indexOf(`  async function ${end}(`));
     evaluate(code + `\nthis.run = ${name};`, context);
     await context.run({ preventDefault() {}, currentTarget: {} });

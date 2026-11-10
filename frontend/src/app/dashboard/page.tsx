@@ -90,6 +90,7 @@ function AdminUserManagementEditor({ onClose }: { onClose: () => void }) {
 }
 
 type History = { id: number; table_name: string; action: string; changed_at: string };
+type HistorySummary = { id: number; company_name: string; category: string; action: string; changed_at: string };
 type Company = SiteDeliveries & { can_edit: boolean; dashboard_image?: DashboardImage | null; attachments?: SiteAttachment[]; created_at?: string; updated_at?: string; build_date?: string; notes?: string; special_notes?: string; id: number; created_by: number | null; name: string; status: string; business_code: string; maintenance_code: string; contract_type: string; sales_manager: string; support_staff: string; current_file_date: string | null; build_year: number | null; address: string; remote_support: boolean; systems: { id: number; name: string; os_type: string; database_type: string; ip_address: string | null }[]; hardware_specs: { id: number; target: string; cpu: string; memory: string; disk: string; other_detail?: string }[]; hardware_capacities?: { id: number; directory: string; used_capacity: string; total_capacity: string; available_capacity: string }[]; contacts?: Record<string, unknown>[]; contract_products?: Record<string, unknown>[]; solutions?: Record<string, unknown>[]; integrations?: Record<string, unknown>[]; installation_locations?: Record<string, unknown>[]; change_history?: History[] };
 type Tab = "detail" | "basic" | "solutions" | "hardware" | "files" | "search" | "history";
 
@@ -112,7 +113,7 @@ function editInitialValues(company: Company): Record<string, string | boolean | 
     name: company.name, build_year: text((company as unknown as Record<string, unknown>).build_date) || (company.build_year ? `${company.build_year}-01-01` : ""), contract_period: company.contract_type, business_code: company.business_code, maintenance_code: company.maintenance_code,
     sales_manager: company.sales_manager, support_staff_primary: company.support_staff.split(/\s*\/\s*/)[0] ?? "", support_staff_secondary: company.support_staff.split(/\s*\/\s*/).slice(1).join(" / "),
     address: company.address,
-    current_file_date: company.can_edit ? seoulDateFormatter.format(new Date()) : company.current_file_date,
+    current_file_date: company.current_file_date,
     remote_support: company.remote_support,
     ems_package: text(ems.package_name), ems_version: text(ems.version), dashboard_enabled: Boolean(dashboard.product_name),
     dashboard_package: text(dashboard.package_name), dashboard_version: text(dashboard.version), dashboard_location: text(dashboard.installation_location),
@@ -167,6 +168,7 @@ export default function DashboardPage() {
   const [leftOpen, setLeftOpen] = useState(true);
   const [rightOpen, setRightOpen] = useState(true);
   const [historyErrorId, setHistoryErrorId] = useState<number | null>(null);
+  const [historyRevision, setHistoryRevision] = useState(0);
   const [notice, setNotice] = useState("사이트 정보를 불러오는 중입니다.");
   const [user, setUser] = useState<{ id?: number; username: string; is_admin: boolean } | null>(null);
   const [userGroups, setUserGroups] = useState<SiteUser[]>([]);
@@ -176,6 +178,7 @@ export default function DashboardPage() {
   async function refreshSiteData(signal?: AbortSignal) {
     const token = localStorage.getItem("kdy_auth_token");
     if (!token) return;
+    if (!signal) setHistoryRevision(current => current + 1);
     const headers = { Authorization: "Token " + token };
     const groupsRequest = fetch(API + "/auth/site-user-groups/", { headers, signal })
       .then(response => response.ok ? response.json() : [])
@@ -210,6 +213,7 @@ export default function DashboardPage() {
       : company;
     setAllCompanies(current => current.map(removeFile));
     setMyCompanies(current => current.map(removeFile));
+    setHistoryRevision(current => current + 1);
   }
 
   useEffect(() => {
@@ -224,7 +228,7 @@ export default function DashboardPage() {
 
   const selected = selectedIds.map((id) => allCompanies.find((company) => company.id === id)).filter((company): company is Company => Boolean(company));
   const mainCompany = selected.find((company) => company.id === activeCompanyId) ?? selected[0];
-  const historyCompanyId = (rightOpen || activeTab === "history") && mainCompany?.change_history === undefined
+  const historyCompanyId = activeTab === "history" && mainCompany?.change_history === undefined
     ? mainCompany?.id
     : undefined;
   const historyStatus = mainCompany?.change_history !== undefined
@@ -348,13 +352,26 @@ export default function DashboardPage() {
     const form = new FormData(event.currentTarget);
     const text = (name: string) => String(form.get(name) ?? "").trim();
     const headers = { Authorization: `Token ${localStorage.getItem("kdy_auth_token")}`, "Content-Type": "application/json" };
+    const batch = Array.from(crypto.getRandomValues(new Uint8Array(16)), value => value.toString(16).padStart(2, "0")).join("");
+    const normalized = (value: unknown) => typeof value === "string" ? value.trim() : value ?? "";
+    const changes = (values: Record<string, unknown>, original: Record<string, unknown>) =>
+      Object.fromEntries(Object.entries(values).filter(([key, value]) => normalized(value) !== normalized(original[key])));
     const supportStaff = text("support_staff_secondary") ? `${text("support_staff_primary")} / ${text("support_staff_secondary")}`.trim() : text("support_staff_primary");
     const staffChanged = supportStaff !== (editing.support_staff ?? "").replace(/\s*\/\s*/g, " / ").trim();
-    const payload = { build_date: text("build_year") || null, build_year: null, ...deliveryFormValues(form), notes: text("notes"), special_notes: text("special_notes"), name: text("name"), contract_type: text("contract_period"), business_code: text("business_code"), maintenance_code: text("maintenance_code"), sales_manager: text("sales_manager"), ...(staffChanged ? { support_staff: supportStaff } : {}), address: text("address"), current_file_date: text("current_file_date") || null, remote_support: form.get("remote_support") === "on" };
+    const buildDate = text("build_year");
+    const initialBuildDate = editing.build_date || (editing.build_year ? `${editing.build_year}-01-01` : "");
+    const payload = changes({
+      ...(buildDate === initialBuildDate ? {} : { build_date: buildDate || null, build_year: null }),
+      ...deliveryFormValues(form), notes: text("notes"), special_notes: text("special_notes"), name: text("name"),
+      contract_type: text("contract_period"), business_code: text("business_code"), maintenance_code: text("maintenance_code"),
+      sales_manager: text("sales_manager"), ...(staffChanged ? { support_staff: supportStaff } : {}),
+      address: text("address"), current_file_date: text("current_file_date") || null, remote_support: form.get("remote_support") === "on",
+    }, editing as unknown as Record<string, unknown>);
     const companyId = editing.id;
     const saveCompanyLast = staffChanged || transferTo !== undefined;
     async function saveCompany() {
-      const response = await fetch(`${API}/companies/${companyId}/?include_history=0`, { method: "PATCH", ...siteWriteRequest({ ...payload, ...(transferTo === undefined ? {} : { transfer_to: transferTo }) }, files, headers, dashboardImage, removeDashboardImage) });
+      if (!Object.keys(payload).length && !files.length && !dashboardImage && !removeDashboardImage && transferTo === undefined) return;
+      const response = await fetch(`${API}/companies/${companyId}/?include_history=0&edit_batch=${batch}`, { method: "PATCH", ...siteWriteRequest({ ...payload, ...(transferTo === undefined ? {} : { transfer_to: transferTo }) }, files, headers, dashboardImage, removeDashboardImage) });
       if (!response.ok) {
         const data = await response.json().catch(() => ({}));
         throw new Error(data.detail ?? data.transfer_to?.[0] ?? "수정하지 못했습니다.");
@@ -363,13 +380,13 @@ export default function DashboardPage() {
     if (!saveCompanyLast) await saveCompany();
 
     const request = async (path: string, method: string, values?: Record<string, unknown>) => {
-      const result = await fetch(`${API}/${path}/`, { method, headers, body: values ? JSON.stringify({ company: editing.id, ...values }) : undefined });
+      const result = await fetch(`${API}/${path}/?edit_batch=${batch}`, { method, headers, body: values ? JSON.stringify({ company: companyId, ...values }) : undefined });
       if (!result.ok) { const error = await result.json().catch(() => ({})); throw new Error(error.detail ?? JSON.stringify(error)); }
     };
     const save = async (path: string, existing: Record<string, unknown> | undefined, values: Record<string, unknown>, active = true) => {
       if (!active) { if (existing) await request(`${path}/${existing.id}`, "DELETE"); return; }
-      if (existing && Object.entries(values).every(([key, value]) => existing[key] === value)) return;
-      await request(existing ? `${path}/${existing.id}` : path, existing ? "PATCH" : "POST", values);
+      const changed = existing ? changes(values, existing) : values;
+      if (Object.keys(changed).length) await request(existing ? `${path}/${existing.id}` : path, existing ? "PATCH" : "POST", changed);
     };
     await request(`companies/${editing.id}/system-rows`, "PUT", { systems: readSystemRows(form) });
     const solutionCodes = Array.from(form.keys()).filter(key => key.startsWith("license_") && key.endsWith("_used")).map(key => key.slice(8, -5));
@@ -381,12 +398,20 @@ export default function DashboardPage() {
       const existing = (editing.solutions ?? []).find(item => (item.category === "other" ? `custom_${item.id}` : item.category) === code);
       const used = text(`license_${code}_used`), total = text(`license_${code}_total`), other = text(`license_${code}_other`), additional = text(`license_${code}_additional`);
       const quantities = solutionQuantityValues(form, code);
-      await save("solutions", existing, { category: code.startsWith("custom_") ? "other" : code, product_name: text(`license_${code}_label`) || code.toUpperCase(), used_quantity: used ? Number(used) : null, total_quantity: total ? Number(total) : null, other_detail: other, additional_info: additional, ...quantities }, Boolean(existing || used || total || other || additional || Object.values(quantities).some(value => value !== null) || code.startsWith("custom_")));
+      await save("solutions", existing, { category: code.startsWith("custom_") ? "other" : code, product_name: text(`license_${code}_label`) || (existing ? "" : code.toUpperCase()), used_quantity: used ? Number(used) : null, total_quantity: total ? Number(total) : null, other_detail: other, additional_info: additional, ...quantities }, Boolean(existing || used || total || other || additional || Object.values(quantities).some(value => value !== null) || code.startsWith("custom_")));
     }
     for (const product of ["EMS", "Dashboard"]) {
       const prefix = product === "EMS" ? "ems" : "dashboard";
       const existing = (editing.contract_products ?? []).find(item => String(item.product_name).toLowerCase() === product.toLowerCase());
-      const values = { product_name: product, package_name: text(`${prefix}_package`), version: text(`${prefix}_version`), ...(product === "Dashboard" ? { installation_location: text("dashboard_location"), configuration: `Datamanager: ${text("datamanager_version")}` } : { configuration: text("contract_period") }) };
+      const datamanager = text("datamanager_version");
+      const previousConfiguration = String(existing?.configuration ?? "");
+      const dashboardConfiguration = datamanager === previousConfiguration.replace(/^Datamanager:\s*/i, "").trim()
+        ? previousConfiguration : datamanager ? `Datamanager: ${datamanager}` : "";
+      const values = {
+        product_name: existing?.product_name ?? product, package_name: text(`${prefix}_package`), version: text(`${prefix}_version`),
+        ...(product === "Dashboard" ? { installation_location: text("dashboard_location"), configuration: dashboardConfiguration }
+          : !existing || "contract_type" in payload ? { configuration: text("contract_period") } : {}),
+      };
       await save("contract-products", existing, values, product === "Dashboard" ? form.has("dashboard_package") : Boolean(existing || values.package_name || values.version));
     }
     const contactKeys = Array.from(form.keys()).filter(key => /^contact_.+_name$/.test(key));
@@ -425,7 +450,7 @@ export default function DashboardPage() {
     setMyCompanies((current) => current.map((company) => company.id === fullCompany.id ? fullCompany : company));
     setEditing(null);
   }
-  async function deleteCompany(company: Company) { if (!window.confirm(`'${company.name}' 사이트를 삭제할까요? 이 작업은 되돌릴 수 없습니다.`)) return; const response = await fetch(`${API}/companies/${company.id}/`, { method: "DELETE", headers: { Authorization: `Token ${localStorage.getItem("kdy_auth_token")}` } }); if (!response.ok) { const data = await response.json().catch(() => ({})); alert(data.detail ?? "사이트를 삭제하지 못했습니다."); return; } setAllCompanies((current) => current.filter((item) => item.id !== company.id)); setMyCompanies((current) => current.filter((item) => item.id !== company.id)); setSelectedIds((current) => current.filter((id) => id !== company.id)); }
+  async function deleteCompany(company: Company) { if (!window.confirm(`'${company.name}' 사이트를 삭제할까요? 이 작업은 되돌릴 수 없습니다.`)) return; const response = await fetch(`${API}/companies/${company.id}/`, { method: "DELETE", headers: { Authorization: `Token ${localStorage.getItem("kdy_auth_token")}` } }); if (!response.ok) { const data = await response.json().catch(() => ({})); alert(data.detail ?? "사이트를 삭제하지 못했습니다."); return; } setAllCompanies((current) => current.filter((item) => item.id !== company.id)); setMyCompanies((current) => current.filter((item) => item.id !== company.id)); setSelectedIds((current) => current.filter((id) => id !== company.id)); setHistoryRevision(current => current + 1); }
   function logout() { localStorage.removeItem("kdy_auth_token"); localStorage.removeItem("kdy_auth_user"); localStorage.removeItem("kdy_admin_return_token"); localStorage.removeItem("kdy_admin_return_user"); router.replace("/"); }
 
   return <main onKeyDownCapture={preventEnterSubmit} className="min-h-screen bg-slate-100 text-slate-900">
@@ -434,8 +459,8 @@ export default function DashboardPage() {
       <aside className="max-h-[calc(100vh-64px)] overflow-y-auto border-r border-slate-200 bg-white p-4">{leftOpen ? <><div className="mb-4 flex items-center justify-between"><div className="flex items-center gap-2"><button type="button" onClick={() => setShowPassword(true)} title="내 정보 수정" className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:border-blue-600 hover:bg-blue-600 hover:text-white">{user?.username ?? "접속 ID"}</button><button onClick={logout} aria-label="로그아웃" title="로그아웃" className="grid h-9 w-9 place-items-center rounded-lg border border-slate-300 bg-white text-lg text-slate-600 hover:border-blue-600 hover:bg-blue-600 hover:text-white"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-5 w-5" aria-hidden="true"><path d="M10 17l5-5-5-5" /><path d="M15 12H3" /><path d="M21 3v18" /></svg></button></div><button onClick={() => setLeftOpen(false)} aria-label="사이트 목록 접기" className="rounded-md border px-2 py-1 text-sm text-slate-600 hover:bg-slate-50">‹</button></div><div className="mb-4 flex gap-3"><label className="sr-only">사이트 검색</label><select value={searchScope} onChange={(event) => setSearchScope(event.target.value as SearchScope)} aria-label="검색 분류" className="w-16 shrink-0 rounded-lg border border-slate-300 bg-slate-50 px-2 py-2 text-sm font-medium outline-none focus:border-blue-500"><option value="all">전체</option><option value="name">이름</option><option value="contract">계약구분</option><option value="code">코드</option></select><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={searchScope === "all" ? "전체 항목 검색" : searchScope === "name" ? "사이트명 검색" : searchScope === "contract" ? "계약구분 검색" : "사업·유지보수 코드 검색"} className="min-w-0 flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-blue-500" /></div><div className="mb-4"><label htmlFor="sidebar-contract-filter" className="mb-2 block text-xs font-bold text-slate-600">계약 구분</label><select id="sidebar-contract-filter" value={contractFilter === null ? "all" : `value:${contractFilter}`} onChange={(event) => setContractFilter(event.target.value === "all" ? null : event.target.value.slice(6))} className="w-full rounded-lg border border-slate-300 bg-white p-1 text-sm outline-none focus:border-blue-500"><option value="all" className="px-2 py-1">전체 계약 구분</option>{contractOptions.map((value) => <option key={value} value={`value:${value}`} className="px-2 py-1">{value || "미입력"}</option>)}</select></div>{user?.is_admin && <div className="mb-4 flex rounded-lg border border-slate-200 bg-slate-50 p-1 text-sm"><label className={`flex-1 cursor-pointer rounded-md px-2 py-2 text-center ${siteListMode === "all" ? "bg-white font-semibold text-blue-700 shadow-sm" : "text-slate-500"}`}><input type="radio" className="sr-only" checked={siteListMode === "all"} onChange={() => setSiteListMode("all")} />전체 사이트</label><label className={`flex-1 cursor-pointer rounded-md px-2 py-2 text-center ${siteListMode === "users" ? "bg-white font-semibold text-blue-700 shadow-sm" : "text-slate-500"}`}><input type="radio" className="sr-only" checked={siteListMode === "users"} onChange={() => setSiteListMode("users")} />사용자별 사이트</label></div>}{user?.is_admin ? (siteListMode === "all" ? <SiteSection title="전체 사이트" searching={sidebarSearching} count={filtered(allCompanies).length} sites={filtered(allCompanies)} selectedIds={selectedIds} onToggle={toggleCompany} onAdd={() => setShowAdd(true)} /> : <UserSiteGroups key={`${searchScope}:${query.trim()}:${contractFilter}`} searching={sidebarSearching} groups={userGroups} companies={filtered(allCompanies)} selectedIds={selectedIds} onToggle={toggleCompany} onInfo={id => { setSiteListUserId(id); setActiveTab("detail"); }} />) : <RegularSiteLists key={`${sidebarSearching}:${contractFilter}`} searching={sidebarSearching} mine={siteLists.mine} others={siteLists.others} selectedIds={selectedIds} onToggle={toggleCompany} onAdd={() => setShowAdd(true)} />}<ManagementMenu onSearch={() => { setSiteListUserId(null); setActiveTab("search"); }} isAdmin={Boolean(user?.is_admin)} onManageSites={() => setShowSiteManagement(true)} onUsers={() => setShowUserManagement(true)} /></> : <button onClick={() => setLeftOpen(true)} aria-label="사이트 목록 펼치기" className="grid h-9 w-full place-items-center rounded-md border text-lg text-slate-600 hover:bg-slate-50">›</button>}</aside>
       <section onDragOver={(event) => event.preventDefault()} onDrop={(event) => { const id = Number(event.dataTransfer.getData("company-id")); if (id && allCompanies.some((company) => company.id === id)) openCompany(id); }} className="center-workspace min-w-0 p-5 lg:p-7"><div className="mb-6 flex flex-wrap items-end justify-between gap-3">{siteListUserId !== null ? <div><p className="text-sm font-medium text-blue-600">사용자별 사이트</p><h1 className="mt-1 text-2xl font-bold">{userGroups.find(group => group.id === siteListUserId)?.name || userGroups.find(group => group.id === siteListUserId)?.username} · 전체 사이트</h1></div> : activeTab === "search" ? <h1 className="text-2xl font-bold">검색</h1> : mainCompany ? <div><p className="text-sm font-medium text-blue-600">사이트 정보</p><div className="mt-1 flex flex-wrap items-center gap-3"><h1 className="text-2xl font-bold">{mainCompany.name}</h1>{(mainCompany.dashboard_image?.id ?? 0) > 0 && (mainCompany.dashboard_image?.size ?? 0) > 0 && <button type="button" onClick={() => setDashboardPreview({ name: mainCompany.name, image: mainCompany.dashboard_image })} className="rounded-lg border border-blue-300 bg-blue-50 px-3 py-1.5 text-sm font-semibold text-blue-700 hover:bg-blue-600 hover:text-white">대시보드</button>}</div><p className="mt-1 text-sm text-slate-500">좌측 사이트를 이 영역으로 끌어 놓아 추가할 수 있습니다.</p></div> : <div />}<div>{siteListUserId !== null && <button type="button" onClick={() => { setSiteListUserId(null); setActiveTab("detail"); }} aria-label="담당자 선택 취소" className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:border-blue-600 hover:bg-blue-600 hover:text-white">선택 취소</button>}{siteListUserId === null && activeTab !== "search" && mainCompany?.current_file_date && <p className="text-sm text-slate-600">등록·수정 날짜 <b className="ml-1 text-base text-slate-700">{mainCompany.current_file_date}</b></p>}{siteListUserId === null && activeTab !== "search" && mainCompany && <button onClick={() => openSiteForm(mainCompany)} className="mt-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition hover:border-blue-600 hover:bg-blue-600 hover:text-white">{mainCompany.can_edit ? "수정" : "정보 확인"}</button>}</div></div>
         {notice ? <div className="rounded-xl border border-dashed border-slate-300 bg-white p-10 text-center text-slate-500">{notice}</div> : <>{siteListUserId === null && mainCompany && <><div className="mb-5 flex flex-wrap gap-2">{selected.map((company) => <button key={company.id} onClick={() => { setActiveCompanyId(company.id); }} className={`rounded-full px-3 py-1.5 text-[11px] ${company.id === mainCompany.id ? "bg-blue-600 text-white" : "bg-white ring-1 ring-slate-200"}`}>{company.name}<span onClick={(event) => { event.stopPropagation(); toggleCompany(company.id); }} className="ml-2 opacity-70">×</span></button>)}<button type="button" onClick={() => { setSelectedIds([]); setActiveCompanyId(null); setActiveTab("detail"); }} title="열린 사이트 탭 모두 닫기" aria-label="열린 사이트 탭 모두 닫기 clear" className="ml-auto rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 hover:border-blue-600 hover:bg-blue-600 hover:text-white">clear</button></div><nav className="mb-5 flex overflow-x-auto border-b border-slate-200">{([['detail','상세 정보'],['basic','기본 정보'],['solutions','구축 솔루션'],['hardware','HW 정보'],['files','추가정보파일']] as [Tab,string][]).map(([key,label]) => <button key={key} onClick={() => setActiveTab(key)} className={`whitespace-nowrap border-b-2 px-4 py-3 text-sm font-semibold ${activeTab === key ? "border-blue-600 text-blue-600" : "border-transparent text-slate-500"}`}>{label}</button>)}</nav></>}{siteListUserId !== null && user?.is_admin ? <UserSitesTable key={user.id ?? user.username} preferenceKey={`brainz_site_columns_${encodeURIComponent(String(user.id ?? user.username))}`} companies={allCompanies.filter(company => userGroups.find(group => group.id === siteListUserId)?.company_ids.includes(company.id))} onOpen={openSiteForm} onDashboardOpen={setDashboardPreview} /> : activeTab === "search" ? <div className="max-h-[calc(100vh-200px)] overflow-y-auto pr-2"><SearchTabs companies={allCompanies} onOpen={openSiteForm} onDashboardOpen={setDashboardPreview} /></div> : mainCompany ? <Content tab={activeTab} company={mainCompany} historyStatus={historyStatus} canManageFiles={mainCompany.can_edit} onDeleteFile={deleteSiteFile} onDashboardOpen={setDashboardPreview} /> : <div className="rounded-xl border border-dashed border-slate-300 bg-white p-14 text-center"><p className="text-lg font-semibold">표시할 사이트가 없습니다.</p><p className="mt-2 text-sm text-slate-500">좌측 목록에서 + 버튼을 눌러 상세 정보를 열어보세요.</p><p className="mt-2 text-sm text-slate-500">좌측 사이트를 이 영역으로 끌어 놓아 추가하거나, 왼쪽 검색 메뉴로 사이트 정보를 검색할 수 있습니다.</p></div>}</>}</section>
-      <aside className="border-l border-slate-200 bg-white p-4">{rightOpen ? <><div className="mb-4"><button onClick={() => setRightOpen(false)} aria-label="변경 이력 접기" className="rounded-md border px-2 py-1 text-sm text-slate-600 hover:bg-slate-50">›</button></div><HistoryPanel company={mainCompany} historyStatus={historyStatus} /></> : <button onClick={() => setRightOpen(true)} aria-label="변경 이력 펼치기" className="grid h-9 w-full place-items-center rounded-md border text-lg text-slate-600 hover:bg-slate-50">‹</button>}</aside>
-    </div>{showAdd && <AddSiteDialog onClose={() => setShowAdd(false)} onCreate={createCompany} onPreview={previewImport} onImport={commitImport} onBackToManagement={fromSiteManagement ? () => { setShowAdd(false); setEditing(null); setFromSiteManagement(false); setShowSiteManagement(true); } : undefined} />}{editing && <AddSiteDialog onClose={() => setEditing(null)} onCreate={updateCompany} onPreview={previewImport} onImport={commitImport} onBackToManagement={fromSiteManagement ? () => { setShowAdd(false); setEditing(null); setFromSiteManagement(false); setShowSiteManagement(true); } : undefined} editMode readOnly={!editing.can_edit} transferUsers={userGroups.filter(group => group.id !== user?.id && group.username !== user?.username && !group.company_ids.includes(editing.id)).sort(compareSiteUsers)} existingFiles={editing.attachments} dashboardImage={editing.dashboard_image} initialValues={editFormValues} />}
+      <aside className="border-l border-slate-200 bg-white p-4">{rightOpen ? <><div className="mb-4"><button onClick={() => setRightOpen(false)} aria-label="변경 이력 접기" className="rounded-md border px-2 py-1 text-sm text-slate-600 hover:bg-slate-50">›</button></div><HistoryPanel revision={historyRevision} isAdmin={Boolean(user?.is_admin)} /></> : <button onClick={() => setRightOpen(true)} aria-label="변경 이력 펼치기" className="grid h-9 w-full place-items-center rounded-md border text-lg text-slate-600 hover:bg-slate-50">‹</button>}</aside>
+    </div>{showAdd && <AddSiteDialog onClose={() => setShowAdd(false)} onCreate={createCompany} onPreview={previewImport} onImport={commitImport} onBackToManagement={fromSiteManagement ? () => { setShowAdd(false); setEditing(null); setFromSiteManagement(false); setShowSiteManagement(true); } : undefined} />}{editing && <AddSiteDialog onClose={() => setEditing(null)} onCreate={async (...args) => { try { await updateCompany(...args); } finally { setHistoryRevision(current => current + 1); } }} onPreview={previewImport} onImport={commitImport} onBackToManagement={fromSiteManagement ? () => { setShowAdd(false); setEditing(null); setFromSiteManagement(false); setShowSiteManagement(true); } : undefined} editMode readOnly={!editing.can_edit} transferUsers={userGroups.filter(group => group.id !== user?.id && group.username !== user?.username && !group.company_ids.includes(editing.id)).sort(compareSiteUsers)} existingFiles={editing.attachments} dashboardImage={editing.dashboard_image} initialValues={editFormValues} />}
     {showSiteManagement && <SiteManagementModal companies={user?.is_admin ? allCompanies : allCompanies.filter(company => company.can_edit || myCompanies.some(item => item.id === company.id))} onClose={() => setShowSiteManagement(false)} onAdd={() => { setShowSiteManagement(false); setFromSiteManagement(true); setShowAdd(true); }} onEdit={(company) => { setShowSiteManagement(false); setFromSiteManagement(true); openSiteForm(company); }} onDelete={deleteCompany} canDelete={company => company.can_edit && Boolean(user?.is_admin || myCompanies.some(item => item.id === company.id))} isAdmin={Boolean(user?.is_admin)} onAssignments={() => { setShowSiteManagement(false); setShowAssignments(true); }} />}
     {dashboardPreview && <DashboardImageModal target={dashboardPreview} onClose={() => setDashboardPreview(null)} />}
     {showPassword && <PasswordModal onClose={() => setShowPassword(false)} />}
@@ -934,17 +959,39 @@ function History({ company, historyStatus }: { company: Company; historyStatus: 
   </div>;
 }
 
-function HistoryPanel({ company, historyStatus }: { company?: Company; historyStatus: string }) {
+function HistoryPanel({ revision, isAdmin }: { revision: number; isAdmin: boolean }) {
   const day = (offset: number) => seoulDateFormatter.format(new Date(Date.now() + offset * 86400000));
   const [startDate, setStartDate] = useState(() => day(-6));
   const [endDate, setEndDate] = useState(() => day(0));
   const [query, setQuery] = useState("");
+  const [result, setResult] = useState<{ key: string; items: HistorySummary[]; error?: string }>();
   const activeDays = endDate === day(0) ? startDate === day(-6) ? 7 : startDate === day(-29) ? 30 : null : null;
+  const validRange = Boolean(startDate && endDate && startDate <= endDate);
+  const rangeKey = `${startDate}:${endDate}:${revision}`;
+  useEffect(() => {
+    const token = localStorage.getItem("kdy_auth_token");
+    if (!validRange || !token) return;
+    const controller = new AbortController();
+    const params = new URLSearchParams({ start: startDate, end: endDate });
+    void fetch(`${API}/history/summary/?${params}`, {
+      headers: { Authorization: `Token ${token}` }, signal: controller.signal,
+    }).then(async response => {
+      if (!response.ok) throw new Error();
+      const items: HistorySummary[] = await response.json();
+      if (!controller.signal.aborted) setResult({ key: rangeKey, items });
+    }).catch(() => {
+      if (!controller.signal.aborted) setResult({ key: rangeKey, items: [], error: "변경 이력을 불러오지 못했습니다." });
+    });
+    return () => controller.abort();
+  }, [validRange, rangeKey, startDate, endDate]);
+
+  const current = result?.key === rangeKey ? result : undefined;
+  const title = (item: HistorySummary) => `${item.company_name} · ${item.category} ${historyActionLabel(item.action)}`;
   const search = query.trim().toLowerCase();
-  const items = company ? siteHistoryItems(company).filter(item => {
-    const date = seoulDateFormatter.format(new Date(item.changed_at));
-    return date >= startDate && date <= endDate && siteHistoryTitle(company, item).toLowerCase().includes(search);
-  }) : [];
+  const items = (current?.items ?? []).filter(item => title(item).toLowerCase().includes(search));
+  const empty = !validRange ? "조회 기간을 확인하세요."
+    : !current ? "변경 이력을 불러오는 중입니다."
+      : current.error || "조건에 해당하는 변경 이력이 없습니다.";
 
   return <section className="max-h-[calc(100vh-120px)] overflow-y-auto pr-1">
     <div className="sticky top-0 z-20 mb-4 border-b border-slate-200 bg-white pb-3 pt-1">
@@ -954,19 +1001,19 @@ function HistoryPanel({ company, historyStatus }: { company?: Company; historySt
           {([7, 30] as const).map(days => <button key={days} type="button" onClick={() => { setStartDate(day(-(days - 1))); setEndDate(day(0)); }} aria-pressed={activeDays === days} title={`오늘 포함 최근 ${days}일 조회`} className={`rounded-md border px-2 py-1 text-[11px] font-semibold transition hover:border-blue-500 hover:bg-blue-600 hover:text-white ${activeDays === days ? "border-blue-300 bg-blue-50 text-blue-700" : "border-slate-200 bg-white text-slate-600"}`}>{days}D</button>)}
         </div>
       </div>
-      <p className="mt-1 text-xs text-slate-500">{activeDays ? `최근 ${activeDays}일` : "지정 기간"} · {company ? company.name : "사이트를 선택하세요"}</p>
+      <p className="mt-1 text-xs text-slate-500">{activeDays ? `최근 ${activeDays}일` : "지정 기간"} · {isAdmin ? "전체 사이트" : "담당 사이트 전체"}</p>
     </div>
     <div className="mb-4 grid grid-cols-2 gap-2">
       <SegmentedDatePicker label="시작일" value={startDate} onChange={setStartDate} />
       <SegmentedDatePicker label="종료일" value={endDate} onChange={setEndDate} />
     </div>
     <input value={query} onChange={event => setQuery(event.target.value)} placeholder="사이트명 또는 변경 유형 검색" className="mb-4 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
-    {company ? <div className="space-y-3">
-      {items.length ? items.map(item => <article key={item.id} className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
-        <p className="text-sm font-semibold">{siteHistoryTitle(company, item)}</p>
-        <time className="text-xs text-slate-400">{new Date(item.changed_at).toLocaleString("ko-KR")}</time>
-      </article>) : <p className="text-sm text-slate-500">{historyStatus || "선택한 기간에 해당하는 변경 이력이 없습니다."}</p>}
-    </div> : <p className="text-sm text-slate-500">왼쪽에서 사이트를 추가하면 이력이 표시됩니다.</p>}
+    <div className="space-y-3">
+      {items.length ? items.map(item => <article key={`${item.id}:${item.category}`} className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
+        <p className="text-sm font-semibold">{title(item)}</p>
+        <time className="text-xs text-slate-400">{new Date(item.changed_at).toLocaleString("ko-KR", { timeZone: "Asia/Seoul" })}</time>
+      </article>) : <p role="status" className="text-sm text-slate-500">{empty}</p>}
+    </div>
   </section>;
 }
 

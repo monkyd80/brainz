@@ -1,5 +1,7 @@
 import json
 import re
+from datetime import date, datetime, time, timedelta
+from zoneinfo import ZoneInfo
 
 from rest_framework import filters, viewsets
 from rest_framework.parsers import FormParser, MultiPartParser
@@ -16,6 +18,7 @@ from django.shortcuts import get_object_or_404
 from .models import Company, CompanyChangeHistory, Contact, ContractProduct, HardwareCapacity, HardwareSpec, InstallationLocation, Integration, LookupOption, Solution, System
 from .serializers import CompanyChangeHistorySerializer, CompanyDashboardSerializer, CompanySerializer, ContactSerializer, ContractProductSerializer, HardwareCapacitySerializer, HardwareSpecSerializer, InstallationLocationSerializer, IntegrationSerializer, LookupOptionSerializer, SolutionSerializer, SystemSerializer
 from .importers import preview_upload
+from .history import comparable, history_edit, history_summaries
 from .template_import import preview_template
 from .models import CompanyAssignment
 from .site_assignments import assign_registered_site, can_edit_site, lock_editable_site
@@ -24,6 +27,10 @@ from .site_assignments import assign_registered_site, can_edit_site, lock_editab
 class SearchableModelViewSet(viewsets.ModelViewSet):
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
     ordering_fields = "__all__"
+
+    def dispatch(self, request, *args, **kwargs):
+        with history_edit(request.GET.get("edit_batch")):
+            return super().dispatch(request, *args, **kwargs)
 
 
 class CompanyViewSet(SearchableModelViewSet):
@@ -115,7 +122,15 @@ class CompanyViewSet(SearchableModelViewSet):
             serializer = SystemSerializer(existing.get(row_id), data={**row, "company": company.pk})
             serializer.is_valid(raise_exception=True)
             validated.append(serializer)
-        saved = [serializer.save() for serializer in validated]
+        saved = [
+            serializer.instance
+            if serializer.instance and all(
+                comparable(getattr(serializer.instance, key)) == comparable(value)
+                for key, value in serializer.validated_data.items()
+            )
+            else serializer.save()
+            for serializer in validated
+        ]
         company.systems.exclude(pk__in=[row.pk for row in saved]).delete()
         return Response(SystemSerializer(saved, many=True).data)
 
@@ -362,3 +377,24 @@ class CompanyChangeHistoryViewSet(viewsets.ReadOnlyModelViewSet):
     filter_backends = SearchableModelViewSet.filter_backends
     ordering_fields = SearchableModelViewSet.ordering_fields
     search_fields = ["company_name", "table_name", "action", "changed_fields"]
+
+    @action(detail=False, methods=["get"])
+    def summary(self, request):
+        try:
+            start = date.fromisoformat(request.query_params.get("start", ""))
+            end = date.fromisoformat(request.query_params.get("end", ""))
+            end_exclusive = end + timedelta(days=1)
+        except (ValueError, OverflowError):
+            raise ValidationError({"detail": "조회 시작일과 종료일을 입력하세요."})
+        if start > end:
+            raise ValidationError({"detail": "시작일은 종료일보다 늦을 수 없습니다."})
+
+        seoul = ZoneInfo("Asia/Seoul")
+        history = self.get_queryset().filter(
+            company__isnull=False,
+            changed_at__gte=datetime.combine(start, time.min, seoul),
+            changed_at__lt=datetime.combine(end_exclusive, time.min, seoul),
+        )
+        if not request.user.is_staff:
+            history = history.filter(company__assignments__user=request.user)
+        return Response(list(history_summaries(history)))

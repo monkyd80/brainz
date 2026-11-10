@@ -1,15 +1,23 @@
 from django.db import transaction
+from django.db.models import FileField
 from django.db.models.signals import post_delete, post_save, pre_delete, pre_save
 from django.dispatch import receiver
-from .models import CompanyDashboardImage, CompanyAttachment, Company, CompanyChangeHistory, Contact, ContractProduct, HardwareSpec, InstallationLocation, Integration, Solution, System
+from .history import METADATA_FIELDS, comparable, edit_batch
+from .models import CompanyDashboardImage, CompanyAttachment, Company, CompanyChangeHistory, Contact, ContractProduct, HardwareCapacity, HardwareSpec, InstallationLocation, Integration, Solution, System
 
 
-AUDITED_MODELS = (Company, Contact, ContractProduct, Solution, Integration, System, InstallationLocation, HardwareSpec)
+AUDITED_MODELS = (
+    Company, Contact, ContractProduct, Solution, Integration, System, InstallationLocation,
+    HardwareSpec, HardwareCapacity, CompanyAttachment, CompanyDashboardImage,
+)
 
 
 def snapshot(instance):
     """Return database field values, excluding the primary key, as JSON-compatible data."""
-    return {field.name: field.value_from_object(instance) for field in instance._meta.fields if field.name != "id"}
+    return {
+        field.name: str(getattr(instance, field.attname)) if isinstance(field, FileField) else field.value_from_object(instance)
+        for field in instance._meta.fields if field.name != "id"
+    }
 
 
 def company_for(instance):
@@ -21,27 +29,34 @@ def company_for(instance):
 
 @receiver(pre_save)
 def keep_previous_snapshot(sender, instance, **kwargs):
-    if sender not in AUDITED_MODELS or not instance.pk:
+    if sender not in AUDITED_MODELS or not instance.pk or kwargs.get("raw"):
         return
     try:
-        instance._history_before = snapshot(sender.objects.get(pk=instance.pk))
+        instance._history_before = snapshot(sender.objects.using(kwargs["using"]).get(pk=instance.pk))
     except sender.DoesNotExist:
         instance._history_before = None
 
 
 @receiver(post_save)
 def record_save(sender, instance, created, **kwargs):
-    if sender not in AUDITED_MODELS:
+    if sender not in AUDITED_MODELS or kwargs.get("raw"):
         return
-    company, company_name = company_for(instance)
     after = snapshot(instance)
     before = {} if created else getattr(instance, "_history_before", {}) or {}
-    changed = list(after) if created else [key for key, value in after.items() if before.get(key) != value]
+    update_fields = kwargs.get("update_fields")
+    if update_fields is not None:
+        updated_names = {field.name for field in instance._meta.fields if {field.name, field.attname} & update_fields}
+        after = {**before, **{key: value for key, value in after.items() if key in updated_names}}
+    changed = list(after) if created else [
+        key for key, value in after.items()
+        if key not in METADATA_FIELDS and comparable(before.get(key)) != comparable(value)
+    ]
     if created or changed:
-        CompanyChangeHistory.objects.create(
+        company, company_name = company_for(instance)
+        CompanyChangeHistory.objects.using(kwargs["using"]).create(
             company=company, company_name=company_name, table_name=sender._meta.db_table,
             record_id=instance.pk, action=CompanyChangeHistory.Action.CREATE if created else CompanyChangeHistory.Action.UPDATE,
-            before_data=before, after_data=after, changed_fields=changed,
+            before_data=before, after_data=after, changed_fields=changed, edit_batch=edit_batch.get(),
         )
 
 
@@ -50,10 +65,10 @@ def record_delete(sender, instance, **kwargs):
     if sender not in AUDITED_MODELS:
         return
     company, company_name = company_for(instance)
-    CompanyChangeHistory.objects.create(
+    CompanyChangeHistory.objects.using(kwargs["using"]).create(
         company=company, company_name=company_name, table_name=sender._meta.db_table,
         record_id=instance.pk, action=CompanyChangeHistory.Action.DELETE,
-        before_data=snapshot(instance), after_data={}, changed_fields=[],
+        before_data=snapshot(instance), after_data={}, changed_fields=[], edit_batch=edit_batch.get(),
     )
 
 

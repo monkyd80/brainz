@@ -1,7 +1,8 @@
 from django.contrib.auth import get_user_model
 from django.shortcuts import get_object_or_404
 from rest_framework.exceptions import PermissionDenied
-from .models import Company, CompanyAssignment, Notice
+from .history import edit_batch
+from .models import Company, CompanyAssignment, CompanyChangeHistory, Notice
 
 
 def brainz_account():
@@ -26,6 +27,12 @@ def transfer_site(company, recipient, previous_name):
     recipient_name = recipient.get_full_name() or recipient.username
     company.assignments.exclude(user=recipient).delete()
     CompanyAssignment.objects.get_or_create(company=company, user=recipient)
+    CompanyChangeHistory.objects.create(
+        company=company, company_name=company.name, table_name=CompanyAssignment._meta.db_table,
+        record_id=company.pk, action=CompanyChangeHistory.Action.UPDATE, edit_batch=edit_batch.get(),
+        before_data={"assignees": [assignment.user_id for assignment in assignments]},
+        after_data={"assignees": [recipient.pk]}, changed_fields=["assignees"],
+    )
     Notice.objects.create(
         title="사이트 이관",
         body=f"{previous_users or '미할당'}:{previous_name} -> {recipient_name}:{company.name}\n이관이 완료되었습니다.",
