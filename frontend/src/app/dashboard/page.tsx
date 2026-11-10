@@ -501,14 +501,16 @@ function AssignmentModal({ companies, onClose, onBack }: { companies: Company[];
       else assigneeNames.set(siteId, [name]);
     }
   }
-  const assigneeQuery = availableQuery.trim().toLocaleLowerCase();
+  const matchingAccountSiteIds = availableScope === "user" && availableQuery.trim()
+    ? new Set(users.filter(user => matchesUser(user, availableQuery)).flatMap(user => user.company_ids))
+    : null;
   const available = companies.filter(company => availableScope === "user"
-    ? !assigneeQuery || assigneeNames.get(company.id)?.some(name => name.toLocaleLowerCase().includes(assigneeQuery))
+    ? !matchingAccountSiteIds || matchingAccountSiteIds.has(company.id)
     : matches(company, availableQuery, availableScope));
   const availablePlaceholder = {
     site: "사이트명 검색",
     code: "코드 검색",
-    user: "사용자 이름 검색",
+    user: "로그인 ID 또는 이름 검색",
   }[availableScope];
   const fieldClass = "h-10 min-w-0 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none focus:border-blue-500";
   const siteName = current ? (current.name ? `${current.name} (${current.username})` : current.username) : "";
@@ -539,7 +541,7 @@ function AssignmentModal({ companies, onClose, onBack }: { companies: Company[];
         <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_250px_minmax(0,1fr)]">
           <section onDragOver={event => { event.preventDefault(); setDropTarget("available"); }} onDragLeave={() => setDropTarget(null)} onDrop={event => dropSite(event, "available")} className={`min-w-0 overflow-hidden rounded-xl border bg-white ${dropTarget === "available" ? "border-blue-400 ring-2 ring-blue-100" : "border-slate-200"}`}>
             <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-4 py-3"><h3 className="text-sm font-bold text-slate-700">전체 사이트</h3><span className="rounded-full bg-white px-2 py-0.5 text-xs font-semibold text-slate-500 ring-1 ring-slate-200">{available.length}개</span></div>
-            <div className="flex gap-2 border-b border-slate-100 p-3"><select aria-label="전체 사이트 검색 기준" value={availableScope} onChange={e => setAvailableScope(e.target.value as "site" | "code" | "user")} className={`${fieldClass} w-32 shrink-0 px-3`}><option value="site">사이트명</option><option value="code">코드</option><option value="user">사용자 이름</option></select><input aria-label="전체 사이트 검색" value={availableQuery} onChange={e => setAvailableQuery(e.target.value)} placeholder={availablePlaceholder} className={`${fieldClass} flex-1`} /></div>
+            <div className="flex gap-2 border-b border-slate-100 p-3"><select aria-label="전체 사이트 검색 기준" value={availableScope} onChange={e => setAvailableScope(e.target.value as "site" | "code" | "user")} className={`${fieldClass} w-36 shrink-0 px-3`}><option value="site">사이트명</option><option value="code">코드</option><option value="user">로그인 ID·이름</option></select><input aria-label="전체 사이트 검색" value={availableQuery} onChange={e => setAvailableQuery(e.target.value)} placeholder={availablePlaceholder} className={`${fieldClass} flex-1`} /></div>
             <div className="h-64 overflow-y-auto overscroll-contain p-2 lg:h-[min(42vh,420px)]">
               {available.length ? available.map(c => {
                 const assignee = assigneeNames.get(c.id)?.join(", ") || "미할당";
