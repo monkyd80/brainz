@@ -31,12 +31,10 @@ class TemplateDownloadPermissionTests(TestCase):
     def assert_download(self):
         response = self.client.get("/api/companies/import-template/")
         self.assertEqual(response.status_code, 200, getattr(response, "data", None))
-        try:
-            self.assertEqual(response["Content-Type"], "application/vnd.ms-excel")
-            self.assertIn('attachment; filename="sample_kdy.xls"', response["Content-Disposition"])
-            self.assertEqual(b"".join(response.streaming_content), b"test template file")
-        finally:
-            response.close()
+        content = b"".join(response.streaming_content)
+        self.assertEqual(response["Content-Type"], "application/vnd.ms-excel")
+        self.assertIn('attachment; filename="sample_kdy.xls"', response["Content-Disposition"])
+        self.assertEqual(content, b"test template file")
 
     def test_admin_and_member_download_the_template(self):
         for user in (self.admin, self.member):

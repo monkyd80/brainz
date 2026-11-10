@@ -51,10 +51,9 @@ class DashboardImageTests(TestCase):
         for part in ("content", "thumbnail"):
             result = self.client.get(f"/api/dashboard-images/{row.pk}/{part}/")
             self.assertEqual(result.status_code, 200)
+            content = b"".join(result.streaming_content)
             self.assertEqual(result["Content-Type"], "image/png")
             self.assertEqual(result["X-Content-Type-Options"], "nosniff")
-            content = b"".join(result.streaming_content)
-            result.close()
             with Image.open(BytesIO(content)) as image:
                 self.assertEqual(image.size, (320, 180) if part == "thumbnail" else (1600, 900))
         self.client.force_authenticate(None)

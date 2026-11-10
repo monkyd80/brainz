@@ -56,14 +56,14 @@ class SiteTemplateImportTests(TestCase):
     def test_download_preview_and_commit_store_related_details(self):
         download = self.client.get("/api/companies/import-template/")
         self.assertEqual(download.status_code, 200)
-        downloaded = b"".join(download.streaming_content) if download.streaming else download.content
-        download.close()
+        # Django's test client closes the response after the stream is consumed.
+        downloaded = b"".join(download.streaming_content)
         self.assertEqual(download["Content-Type"], "application/vnd.ms-excel")
         sheet = xlrd.open_workbook(file_contents=downloaded).sheet_by_index(0)
         self.assertEqual([sheet.cell_value(12, col) for col in (2, 4, 6)], ["SMS", "NMS", "DBMS"])
         values = {"name": "테스트 사이트", "build_date": "2024-03-12", "ems_package": "EMS Plus", "contact_name": "홍길동", "license_sms_used": 0, "license_sms_total": 10, "integration_email": "예", "integration_email_detail": "알림", "system_name": "운영 서버", "install_db": "/data/db", "manager1_cpu": "8 core"}
         preview = self.client.post("/api/companies/import-preview/", {"file": self.upload(values)}, format="multipart")
-        self.assertEqual(preview.status_code, 200)
+        self.assertEqual(preview.status_code, 200, preview.data)
         self.assertEqual(preview.data["data"]["name"], "테스트 사이트")
         self.assertEqual(preview.data["unmapped_source_labels"], [])
         created = self.client.post("/api/companies/import-commit/", {"file": self.upload(values)}, format="multipart")
@@ -80,5 +80,6 @@ class SiteTemplateImportTests(TestCase):
 
     def test_invalid_boolean_does_not_create_company(self):
         response = self.client.post("/api/companies/import-commit/", {"file": self.upload({"name": "잘못된 사이트", "remote_support": "아마도"})}, format="multipart")
-        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.status_code, 400, response.data)
+        self.assertIn("예 또는 아니요를 입력하세요", response.data["detail"])
         self.assertFalse(Company.objects.filter(name="잘못된 사이트").exists())

@@ -16,6 +16,7 @@ Object.assign(library, evaluate(fs.readFileSync('src/lib/site-files.ts', 'utf8')
 Object.assign(library, evaluate(fs.readFileSync('src/lib/site-deliveries.ts', 'utf8'), { exports: {} }).exports);
 const source = fs.readFileSync('src/app/dashboard/page.tsx', 'utf8');
 const formSource = fs.readFileSync('src/components/site-add-dialog.tsx', 'utf8');
+const historyLabels = source.slice(source.indexOf('const HISTORY_FIELD_LABELS:'), source.indexOf('type SearchCategory'));
 const fields = { sms: { linux_windows_quantity: 0, unix_quantity: 12 }, nms: { snmp_quantity: 99, icmp_quantity: 23, sdn_quantity: 0 }, dbms: { oracle_quantity: 5 } };
 
 test('new sites and edits save detail counts even when main counts are blank', async () => {
@@ -71,14 +72,17 @@ test('cards show only their own number inputs above additional information', () 
   }
 });
 
-test('center details and site summaries show category counts, including zero', () => {
-  const start = source.indexOf('function RecordSection(');
+function renderSolutionSection(rows) {
+  const start = source.indexOf('function SolutionSection(');
   const end = source.indexOf('\nfunction InfoGrid(', start);
-  const labels = source.slice(source.indexOf('const HISTORY_FIELD_LABELS:'), source.indexOf('type SearchCategory'));
-  const { Section } = evaluate(source.slice(start, end) + '\n' + labels + '\nthis.Section = RecordSection;', { React, ...library });
+  const { Section } = evaluate(source.slice(start, end) + '\n' + historyLabels + '\nthis.Section = SolutionSection;', { React, ...library });
+  return renderToStaticMarkup(React.createElement(Section, { rows }));
+}
+
+test('center details and site summaries show category counts, including zero', () => {
   for (const [category, quantities] of Object.entries(fields)) {
     const row = { category, product_name: category.toUpperCase(), ...quantities };
-    const html = renderToStaticMarkup(React.createElement(Section, { title: '구축 솔루션 (License)', rows: [row] }));
+    const html = renderSolutionSection([row]);
     const summary = library.solutionSummary([row]);
     for (const [field, label] of library.solutionQuantityFields[category]) {
       assert.ok(html.includes(`>${label}</dt>`), category);
@@ -91,17 +95,52 @@ test('center details and site summaries show category counts, including zero', (
   }
 });
 
-test('site details list the checked delivery types once on a single line', () => {
-  const info = source.slice(source.indexOf('function InfoGrid('), source.indexOf('function Hardware('));
-  const { Info } = evaluate(info + '\nthis.Info = InfoGrid;', { React, ...library });
-  const company = { name: '납품 테스트', supplied_server: true, supplied_os: false, supplied_db: true };
-  const html = renderToStaticMarkup(React.createElement(Info, { company }));
-  assert.match(html, />Server 납품 \/ DB 납품<\/dd>/);
-  assert.doesNotMatch(html, /OS 납품|>납품<\/dd>/);
-  const unchecked = renderToStaticMarkup(React.createElement(Info, {
-    company: { ...company, supplied_server: false, supplied_db: false },
-  }));
-  assert.doesNotMatch(unchecked, /납품 항목|Server 납품|DB 납품/);
+test('solution cards omit empty entries and fields while keeping notes and legacy values', () => {
+  const empty = { category: 'apm', product_name: '빈 솔루션', used_quantity: null, other_detail: '  ', additional_info: ' - ' };
+  const html = renderSolutionSection([
+    empty,
+    { category: 'oz', additional_info: '보고서 안내\n두 번째 줄' },
+    { category: 'other', product_name: '기존 솔루션', license_detail: '기존 라이선스', quantity: 0 },
+  ]);
+  assert.equal((html.match(/<article /g) ?? []).length, 2);
+  assert.doesNotMatch(html, /빈 솔루션|>사용 개수<|>전체 개수<|>기타<|등록된 정보가 없습니다/);
+  assert.match(html, />OZ 보고서<\/h4>/);
+  assert.match(html, /보고서 안내\n두 번째 줄/);
+  assert.match(html, /기존 라이선스/);
+  assert.match(html, />0<\/dd>/);
+  const noCards = renderSolutionSection([empty]);
+  assert.doesNotMatch(noCards, /<article /);
+  assert.match(noCards, /등록된 정보가 없습니다/);
+});
+
+test('basic and detail tabs list checked deliveries once in the contract and product section', () => {
+  const sections = source.slice(source.indexOf('function Content('), source.indexOf('function Hardware('));
+  const { CenterContent } = evaluate(sections + '\n' + historyLabels + '\nthis.CenterContent = Content;', {
+    React, ...library, SiteFilesPanel: () => null,
+  });
+  const delivery = { supplied_server: true, supplied_os: false, supplied_db: true };
+  const products = [{ product_name: 'EMS' }, { product_name: 'NMS' }];
+
+  for (const tab of ['basic', 'detail']) {
+    for (const contract_products of [[], products]) {
+      const company = { id: 1, name: '납품 테스트', contract_products, ...delivery };
+      const render = company => renderToStaticMarkup(React.createElement(CenterContent, { tab, company, onDashboardOpen: () => {} }));
+      const html = render(company);
+      const contract = html.match(/>계약·제품<\/h3>[\s\S]*?<\/section>/)?.[0];
+      assert.ok(contract, tab);
+      assert.match(contract, />납품 정보<\/dt><dd[^>]*>Server 납품 \/ DB 납품<\/dd>/);
+      assert.equal((html.match(/>납품 정보<\/dt>/g) ?? []).length, 1);
+      assert.doesNotMatch(html, /OS 납품/);
+
+      const unchecked = render({ ...company, supplied_server: false, supplied_db: false });
+      assert.doesNotMatch(unchecked, /Server 납품|OS 납품|DB 납품/);
+      if (contract_products.length) {
+        assert.match(unchecked, />납품 정보<\/dt><dd[^>]*>없음<\/dd>/);
+      } else {
+        assert.doesNotMatch(unchecked, />납품 정보<\/dt>/);
+      }
+    }
+  }
 });
 
 test('product search joins matching content by site and item', () => {

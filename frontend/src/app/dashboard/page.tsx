@@ -11,7 +11,7 @@ import { DashboardImage, DashboardImageTarget } from "@/lib/dashboard-images";
 import { SiteAttachment, siteWriteRequest } from "@/lib/site-files";
 import { checkedDeliveries, deliveryFields, deliveryFormValues, SiteDeliveries } from "@/lib/site-deliveries";
 import { SegmentedDatePicker } from "@/components/segmented-date-picker";
-import { orderedSolutions, solutionSummary, solutionQuantityFields, solutionQuantityValues } from "@/lib/solutions";
+import { orderedSolutions, solutionOptions, solutionSummary, solutionQuantityFields, solutionQuantityValues } from "@/lib/solutions";
 
 type ColumnSort<Key extends string> = { key: Key; descending: boolean } | null;
 function nextColumnSort<Key extends string>(current: ColumnSort<Key>, key: Key): ColumnSort<Key> {
@@ -674,8 +674,8 @@ function Field({ label, name, required = false, type = "text" }: { label: string
 function EditCompanyModal({ company, onClose, onSave }: { company: Company; onClose: () => void; onSave: (event: FormEvent<HTMLFormElement>) => Promise<void> }) { const [error, setError] = useState(""); return <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/40 p-5"><form onSubmit={async (event) => { try { await onSave(event); } catch (err) { setError(err instanceof Error ? err.message : "수정하지 못했습니다."); } }} className="w-full max-w-2xl rounded-2xl bg-white p-6 shadow-2xl"><div className="flex justify-between"><div><p className="text-sm font-semibold text-blue-600">사이트 수정</p><h2 className="text-xl font-bold">{company.name}</h2></div><button type="button" onClick={onClose} aria-label="닫기" className="grid h-10 w-10 place-items-center rounded-full bg-slate-100 text-2xl font-bold leading-none text-slate-700 ring-1 ring-slate-300 transition hover:bg-red-50 hover:text-red-600 hover:ring-red-300">×</button></div><div className="mt-5 grid gap-4 sm:grid-cols-2"><FieldEdit label="사이트명" name="name" value={company.name} /><FieldEdit label="계약 구분" name="contract_type" value={company.contract_type} /><FieldEdit label="사업 코드" name="business_code" value={company.business_code} /><FieldEdit label="유지보수 코드" name="maintenance_code" value={company.maintenance_code} /><FieldEdit label="담당 영업" name="sales_manager" value={company.sales_manager} /><FieldEdit label="지원 인력" name="support_staff" value={company.support_staff} /><FieldEdit label="주소" name="address" value={company.address} /><FieldEdit label="등록·수정 날짜" name="current_file_date" value={company.current_file_date ?? ""} type="date" /></div><label className="mt-4 flex gap-2 text-sm"><input name="remote_support" type="checkbox" defaultChecked={company.remote_support} />원격 지원 사용</label>{error && <p className="mt-3 text-sm text-red-600">{error}</p>}<div className="mt-6 flex justify-end gap-2"><button type="button" onClick={onClose} className="rounded-lg border px-4 py-2">취소</button><button className="rounded-lg bg-blue-600 px-4 py-2 font-semibold text-white">저장</button></div></form></div> }
 function FieldEdit({ label, name, value, type = "text" }: { label: string; name: string; value: string; type?: string }) { return <label className="text-sm font-medium">{label}<input name={name} type={type} defaultValue={value} className="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 font-normal" /></label> }
 
-function Content({ tab, company, historyStatus = "", canManageFiles = false, onDeleteFile, onDashboardOpen }: { tab: Tab; company: Company; historyStatus?: string; canManageFiles?: boolean; onDeleteFile?: (file: SiteAttachment) => Promise<void>; onDashboardOpen: (target: DashboardImageTarget) => void }) { const deleteFile = canManageFiles ? onDeleteFile : undefined; const content = tab === "files" ? <SiteFilesPanel key={company.id} files={company.attachments} onDelete={deleteFile} /> : tab === "basic" ? <div className="space-y-5"><InfoGrid company={company} /><ContractProducts company={company} /></div> : tab === "solutions" ? <RecordSection title="구축 솔루션 (License)" rows={company.solutions} /> : tab === "hardware" ? <div className="space-y-5"><Hardware company={company} /><RecordSection title="H/W 용량" rows={company.hardware_capacities} /></div> : tab === "history" ? <History company={company} historyStatus={historyStatus} /> : <Detail company={company} onDeleteFile={deleteFile} onDashboardOpen={onDashboardOpen} />; return <div className="max-h-[calc(100vh-270px)] overflow-y-auto pr-2">{content}</div>; }
-function Detail({ company, onDeleteFile, onDashboardOpen }: { company: Company; onDeleteFile?: (file: SiteAttachment) => Promise<void>; onDashboardOpen: (target: DashboardImageTarget) => void }) { return <div className="space-y-5 pr-2"><InfoGrid company={company} /><ContractProducts company={company} /><DashboardInfo company={company} onDashboardOpen={onDashboardOpen} /><RecordSection title="담당자" rows={company.contacts} /><RecordSection title="구축 솔루션 (License)" rows={company.solutions} /><RecordSection title="연동 개발" rows={company.integrations} /><RecordSection title="시스템 구성" rows={company.systems as unknown as Record<string, unknown>[]} /><RecordSection title="설치 위치 정보" rows={company.installation_locations} /><RecordSection title="H/W 구성 정보" rows={company.hardware_specs as unknown as Record<string, unknown>[]} /><RecordSection title="H/W 용량" rows={company.hardware_capacities} /><SiteFilesPanel key={company.id} files={company.attachments} onDelete={onDeleteFile} /></div> }
+function Content({ tab, company, historyStatus = "", canManageFiles = false, onDeleteFile, onDashboardOpen }: { tab: Tab; company: Company; historyStatus?: string; canManageFiles?: boolean; onDeleteFile?: (file: SiteAttachment) => Promise<void>; onDashboardOpen: (target: DashboardImageTarget) => void }) { const deleteFile = canManageFiles ? onDeleteFile : undefined; const content = tab === "files" ? <SiteFilesPanel key={company.id} files={company.attachments} onDelete={deleteFile} /> : tab === "basic" ? <div className="space-y-5"><InfoGrid company={company} /><ContractProducts company={company} /></div> : tab === "solutions" ? <SolutionSection rows={company.solutions} /> : tab === "hardware" ? <div className="space-y-5"><Hardware company={company} /><RecordSection title="H/W 용량" rows={company.hardware_capacities} /></div> : tab === "history" ? <History company={company} historyStatus={historyStatus} /> : <Detail company={company} onDeleteFile={deleteFile} onDashboardOpen={onDashboardOpen} />; return <div className="max-h-[calc(100vh-270px)] overflow-y-auto pr-2">{content}</div>; }
+function Detail({ company, onDeleteFile, onDashboardOpen }: { company: Company; onDeleteFile?: (file: SiteAttachment) => Promise<void>; onDashboardOpen: (target: DashboardImageTarget) => void }) { return <div className="space-y-5 pr-2"><InfoGrid company={company} /><ContractProducts company={company} /><DashboardInfo company={company} onDashboardOpen={onDashboardOpen} /><RecordSection title="담당자" rows={company.contacts} /><SolutionSection rows={company.solutions} /><RecordSection title="연동 개발" rows={company.integrations} /><RecordSection title="시스템 구성" rows={company.systems as unknown as Record<string, unknown>[]} /><RecordSection title="설치 위치 정보" rows={company.installation_locations} /><RecordSection title="H/W 구성 정보" rows={company.hardware_specs as unknown as Record<string, unknown>[]} /><RecordSection title="H/W 용량" rows={company.hardware_capacities} /><SiteFilesPanel key={company.id} files={company.attachments} onDelete={onDeleteFile} /></div> }
 function ContractProducts({ company }: { company: Company }) {
   const deliveries = checkedDeliveries(company).join(" / ");
   const products = (company.contract_products ?? []).filter(product => String(product.product_name ?? "").trim().toLowerCase() !== "dashboard");
@@ -705,27 +705,49 @@ function DashboardInfo({ company, onDashboardOpen }: { company: Company; onDashb
   </section>;
 }
 function RecordSection({ title, rows }: { title: string; rows?: Record<string, unknown>[] }) {
-  const isSolution = title === "구축 솔루션 (License)";
   return <section className="rounded-xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
     <h3 className="sticky top-0 z-10 border-b border-slate-100 bg-white py-3 font-bold">{title}</h3>
-    {rows?.length ? <div className="mt-3 space-y-2">{(isSolution ? orderedSolutions(rows) : rows).map((row, index) => {
-      const quantities = solutionQuantityFields[String(row.category).toLowerCase()] ?? [];
-      const fields = isSolution
-        ? ["product_name", "used_quantity", "total_quantity", "other_detail", ...quantities.map(([field]) => field), "additional_info"].map(key => [key, row[key]] as const)
-        : Object.entries(row);
-      const fieldSpan = (key: string) => {
-        if (!isSolution) return undefined;
-        if (key === "product_name" || key === "additional_info") return "sm:col-span-6";
-        if (quantities.some(([field]) => field === key)) return quantities.length === 2 ? "sm:col-span-3" : quantities.length === 1 ? "sm:col-span-6" : "sm:col-span-2";
-        return "sm:col-span-2";
-      };
-      return <dl key={index} className={`grid gap-2 rounded-lg bg-slate-50 p-3 ${isSolution ? "sm:grid-cols-6" : "sm:grid-cols-3"}`}>
-        {fields.filter(([key]) => !["id", "company"].includes(key)).map(([key, value]) => <div key={key} className={fieldSpan(key)}>
+    {rows?.length ? <div className="mt-3 space-y-2">{rows.map((row, index) =>
+      <dl key={index} className="grid gap-2 rounded-lg bg-slate-50 p-3 sm:grid-cols-3">
+        {Object.entries(row).filter(([key]) => !["id", "company"].includes(key)).map(([key, value]) => <div key={key}>
           <dt className="text-xs text-slate-500">{HISTORY_FIELD_LABELS[key] ?? key}</dt>
           <dd className="mt-1 whitespace-pre-wrap break-words text-sm">{String(value ?? "-")}</dd>
         </div>)}
-      </dl>;
-    })}</div> : <p className="mt-3 text-sm text-slate-500">등록된 정보가 없습니다.</p>}
+      </dl>
+    )}</div> : <p className="mt-3 text-sm text-slate-500">등록된 정보가 없습니다.</p>}
+  </section>;
+}
+
+function SolutionSection({ rows }: { rows?: Record<string, unknown>[] }) {
+  const noteFields = ["other_detail", "license_detail", "additional_info"];
+  const cards = orderedSolutions(rows).flatMap(row => {
+    const category = String(row.category ?? "").trim().toLowerCase();
+    const quantities = solutionQuantityFields[category] ?? [];
+    const fields = ["used_quantity", "total_quantity", "quantity", ...quantities.map(([field]) => field), ...noteFields]
+      .flatMap(key => {
+        const value = String(row[key] ?? "").trim();
+        return value && value !== "-" ? [{ key, value }] : [];
+      });
+    if (!fields.length) return [];
+    const name = String(row.product_name ?? "").trim()
+      || solutionOptions.find(([code]) => code === category)?.[1]
+      || "기타";
+    return [{ id: row.id, name, fields }];
+  });
+
+  return <section className="rounded-xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
+    <h3 className="sticky top-0 z-10 border-b border-slate-100 bg-white py-3 font-bold">구축 솔루션 (License)</h3>
+    {cards.length ? <div className="mt-3 grid grid-cols-[repeat(auto-fit,minmax(min(100%,14rem),1fr))] items-start gap-2">
+      {cards.map(({ id, name, fields }, index) => <article key={String(id ?? index)} className="min-w-0 rounded border border-slate-200 bg-slate-50">
+        <h4 className="border-b border-slate-200 px-3 py-2 text-center text-sm font-bold wrap-anywhere">{name}</h4>
+        <dl className="flex flex-wrap gap-x-3 gap-y-2 px-3 py-2">
+          {fields.map(({ key, value }) => <div key={key} className={noteFields.includes(key) ? "min-w-0 basis-full text-left" : "min-w-0 flex-[1_1_3.5rem]"}>
+            <dt className="text-[11px]! font-medium! text-slate-500 wrap-anywhere">{HISTORY_FIELD_LABELS[key]}</dt>
+            <dd className="whitespace-pre-wrap text-sm wrap-anywhere">{value}</dd>
+          </div>)}
+        </dl>
+      </article>)}
+    </div> : <p className="mt-3 text-sm text-slate-500">등록된 정보가 없습니다.</p>}
   </section>;
 }
 function InfoGrid({ company }: { company: Company }) {
