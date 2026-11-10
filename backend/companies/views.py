@@ -14,7 +14,7 @@ from django.db.models import Exists, OuterRef
 from django.http import FileResponse, HttpResponse
 from django.shortcuts import get_object_or_404
 from .models import Company, CompanyChangeHistory, Contact, ContractProduct, HardwareCapacity, HardwareSpec, InstallationLocation, Integration, LookupOption, Solution, System
-from .serializers import CompanyChangeHistorySerializer, CompanySerializer, ContactSerializer, ContractProductSerializer, HardwareCapacitySerializer, HardwareSpecSerializer, InstallationLocationSerializer, IntegrationSerializer, LookupOptionSerializer, SolutionSerializer, SystemSerializer
+from .serializers import CompanyChangeHistorySerializer, CompanyDashboardSerializer, CompanySerializer, ContactSerializer, ContractProductSerializer, HardwareCapacitySerializer, HardwareSpecSerializer, InstallationLocationSerializer, IntegrationSerializer, LookupOptionSerializer, SolutionSerializer, SystemSerializer
 from .importers import preview_upload
 from .template_import import preview_template
 from .models import CompanyAssignment
@@ -27,12 +27,21 @@ class SearchableModelViewSet(viewsets.ModelViewSet):
 
 
 class CompanyViewSet(SearchableModelViewSet):
-    queryset = Company.objects.prefetch_related("contacts", "contract_products", "solutions", "integrations", "systems", "installation_locations", "hardware_specs", "hardware_capacities", "change_history", "attachments", "dashboard_image")
+    queryset = Company.objects.all()
     serializer_class = CompanySerializer
     search_fields = ["name", "business_code", "maintenance_code", "contract_type", "sales_manager", "support_staff", "address", "contacts__name", "solutions__product_name", "systems__ip_address"]
 
     def get_queryset(self):
         queryset = super().get_queryset()
+        if self.action == "change_history":
+            return queryset
+        queryset = queryset.prefetch_related(
+            "contacts", "contract_products", "solutions", "integrations", "systems",
+            "installation_locations", "hardware_specs", "hardware_capacities",
+            "attachments", "dashboard_image",
+        )
+        if self.action != "dashboard":
+            queryset = queryset.prefetch_related("change_history")
         user = self.request.user
         if user.is_authenticated and not user.is_staff:
             assignments = CompanyAssignment.objects.filter(company_id=OuterRef("pk"), user=user)
@@ -279,6 +288,21 @@ class CompanyViewSet(SearchableModelViewSet):
             for code, label in (("sms", "SMS"), ("nms", "NMS"), ("dbms", "DBMS"), ("apm", "APM"), ("syslog", "SYSLOG"), ("trap", "TRAP"), ("oz", "OZ 보고서")):
                 if any(values.get(f"license_{code}_{part}") not in (None, "") for part in ("used", "total", "other", "additional")):
                     add("구축 솔루션", label)
+
+    @action(detail=False, methods=["get"], serializer_class=CompanyDashboardSerializer)
+    def dashboard(self, request):
+        companies = self.get_queryset()
+        data = self.get_serializer(companies, many=True).data
+        mine_ids = [
+            company.pk for company in companies
+            if request.user.is_staff or company.assigned_to_request_user
+        ]
+        return Response({"companies": data, "mine_ids": mine_ids})
+
+    @action(detail=True, methods=["get"], url_path="change-history", serializer_class=CompanyChangeHistorySerializer)
+    def change_history(self, request, pk=None):
+        company = self.get_object()
+        return Response(self.get_serializer(company.change_history.all(), many=True).data)
 
     @action(detail=False, methods=["get"])
     def mine(self, request):

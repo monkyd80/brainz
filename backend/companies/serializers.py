@@ -145,3 +145,7 @@ class CompanySerializer(serializers.ModelSerializer):
             transfer_site(company, recipient, previous_name)
         self._save_files(company, files, dashboard_image, remove_dashboard_image)
         return company
+
+
+class CompanyDashboardSerializer(CompanySerializer):
+    change_history = None

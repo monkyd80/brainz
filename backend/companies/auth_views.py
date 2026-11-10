@@ -94,6 +94,10 @@ def own_profile(request):
     return Response({"username": request.user.username, "name": request.user.get_full_name(), "email": email, "detail": "내 정보가 저장되었습니다."})
 
 
+def assigned_company_ids(user):
+    return [assignment.company_id for assignment in user.company_assignments.all()]
+
+
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def site_user_groups(request):
@@ -103,7 +107,7 @@ def site_user_groups(request):
         "id": user.id,
         "username": user.username,
         "name": user.get_full_name() or user.first_name,
-        "company_ids": list(user.company_assignments.values_list("company_id", flat=True)),
+        "company_ids": assigned_company_ids(user),
     } for user in users])
 
 
@@ -120,12 +124,13 @@ def switch_user(request):
 
 
 def admin_user_payload(user):
+    profile = getattr(user, "employee_profile", None)
     return {
         "id": user.id, "username": user.username, "email": user.email,
         "name": user.get_full_name() or user.first_name,
         "is_admin": user.is_staff, "is_active": user.is_active,
-        "employee_number": UserProfile.objects.filter(user=user).values_list("employee_number", flat=True).first() or "",
-        "company_ids": list(user.company_assignments.values_list("company_id", flat=True)),
+        "employee_number": profile.employee_number if profile else "",
+        "company_ids": assigned_company_ids(user),
     }
 
 
@@ -133,7 +138,8 @@ def admin_user_payload(user):
 @permission_classes([IsAdminUser])
 def admin_users(request):
     if request.method == "GET":
-        return Response([admin_user_payload(user) for user in User.objects.order_by("username")])
+        users = User.objects.select_related("employee_profile").prefetch_related("company_assignments").order_by("username")
+        return Response([admin_user_payload(user) for user in users])
     username = request.data.get("username", "").strip()
     password = request.data.get("password", "")
     email = request.data.get("email", "").strip()
